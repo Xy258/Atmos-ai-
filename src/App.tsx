@@ -11,6 +11,11 @@ import { UvIndexMiniChart } from '@/components/UvIndexMiniChart';
 import { WindRoseVisualization } from '@/components/WindRoseVisualization';
 import { RainParticleOverlay, isRainOrShowers } from '@/components/RainParticleOverlay';
 import { SevereWeatherAlertBanner, evaluateSevereWeatherAlert } from '@/components/SevereWeatherAlertBanner';
+import { Globe3DModal } from '@/components/Globe3DModal';
+import { AirQualityNavButton } from '@/components/AirQualityNavButton';
+import { AqiTrendChart } from '@/components/AqiTrendChart';
+import { PollutantCard, type PollutantItem } from '@/components/PollutantCard';
+import { DynamicWeatherBackdrop } from '@/components/DynamicWeatherBackdrop';
 import { useGenerateWeatherInsight, useHealthCheck } from '@workspace/api-client-react';
 import {
   Activity,
@@ -1309,6 +1314,7 @@ function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [isViewingCached, setIsViewingCached] = useState(false);
+  const [isGlobeModalOpen, setIsGlobeModalOpen] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1640,9 +1646,12 @@ function Home() {
 
   return (
     <div className="atmos-app">
-      <AtmosphericAmbientBackdrop
-        code={current?.weather_code ?? 0}
+      <DynamicWeatherBackdrop
+        weatherCode={current?.weather_code ?? 0}
         isDay={current ? current.is_day === 1 : true}
+        windSpeed={current?.wind_speed_10m ?? 12}
+        windDirection={current?.wind_direction_10m ?? 180}
+        cloudCover={current?.cloud_cover ?? 20}
       />
       <div className="atmos-shell">
         <Sidebar
@@ -1654,6 +1663,7 @@ function Home() {
           healthOk={health.isSuccess}
           isOnline={isOnline}
           isViewingCached={isViewingCached}
+          onOpenGlobe={() => setIsGlobeModalOpen(true)}
         />
         <main className="main-frame">
           <header className="topbar">
@@ -1863,6 +1873,7 @@ function Home() {
                     visibilityKm={visibilityKm}
                     settings={settings}
                     onUseCurrentLocation={useCurrentLocation}
+                    onOpenGlobe={() => setIsGlobeModalOpen(true)}
                   />
                 ) : activeTab === 'Saved' ? (
                   <SavedLocationsView
@@ -1909,21 +1920,41 @@ function Home() {
             { label: 'Saved', Icon: MapPin, isBigYellow: false },
             { label: 'Settings', Icon: Settings2, isBigYellow: false },
           ] as const
-        ).map(({ label, Icon, isBigYellow }) => (
-          <button
-            className={`${activeTab === label ? 'active' : ''} ${isBigYellow ? 'mobile-nav-air-yellow' : ''}`}
-            data-testid={`mobile-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
-            key={label}
-            onClick={() => setActiveTab(label)}
-            aria-label={`Go to ${label} tab`}
-          >
-            <div className={isBigYellow ? 'air-big-round-icon-mobile' : ''}>
-              <Icon size={isBigYellow ? 22 : 19} />
-            </div>
-            <span>{label}</span>
-          </button>
-        ))}
+        ).map(({ label, Icon, isBigYellow }) =>
+          label === 'Air Quality' ? (
+            <AirQualityNavButton
+              key={label}
+              isMobile={true}
+              isActive={activeTab === 'Air Quality'}
+              onClick={() => setActiveTab('Air Quality')}
+              onOpenGlobe={() => setIsGlobeModalOpen(true)}
+            />
+          ) : (
+            <button
+              className={`${activeTab === label ? 'active' : ''} ${isBigYellow ? 'mobile-nav-air-yellow' : ''}`}
+              data-testid={`mobile-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+              key={label}
+              onClick={() => setActiveTab(label)}
+              aria-label={`Go to ${label} tab`}
+            >
+              <div className={isBigYellow ? 'air-big-round-icon-mobile' : ''}>
+                <Icon size={isBigYellow ? 22 : 19} />
+              </div>
+              <span>{label}</span>
+            </button>
+          )
+        )}
       </nav>
+
+      {/* 3D Atmospheric Weather Globe Modal */}
+      {isGlobeModalOpen && forecast && (
+        <Globe3DModal
+          location={location}
+          forecast={forecast}
+          airQuality={air}
+          onClose={() => setIsGlobeModalOpen(false)}
+        />
+      )}
 
       {toastMessage && (
         <div className="toast-popup" data-testid="toast-notification">
@@ -1947,6 +1978,7 @@ function Sidebar({
   healthOk,
   isOnline = true,
   isViewingCached = false,
+  onOpenGlobe,
 }: {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
@@ -1956,6 +1988,7 @@ function Sidebar({
   healthOk: boolean;
   isOnline?: boolean;
   isViewingCached?: boolean;
+  onOpenGlobe: () => void;
 }) {
   return (
     <aside className="atmos-sidebar">
@@ -1976,19 +2009,29 @@ function Sidebar({
             { Icon: MapPin, label: 'Saved', isBigYellow: false },
             { Icon: Settings2, label: 'Settings', isBigYellow: false },
           ] as const
-        ).map(({ Icon, label, isBigYellow }) => (
-          <button
-            className={`${activeTab === label ? 'active' : ''} ${isBigYellow ? 'side-nav-air-yellow' : ''}`}
-            data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
-            key={label}
-            onClick={() => setActiveTab(label)}
-          >
-            <div className={isBigYellow ? 'air-big-round-icon' : ''}>
-              <Icon size={isBigYellow ? 22 : 17} />
-            </div>
-            {label === 'Saved' ? 'Saved locations' : label}
-          </button>
-        ))}
+        ).map(({ Icon, label, isBigYellow }) =>
+          label === 'Air Quality' ? (
+            <AirQualityNavButton
+              key={label}
+              isMobile={false}
+              isActive={activeTab === 'Air Quality'}
+              onClick={() => setActiveTab('Air Quality')}
+              onOpenGlobe={onOpenGlobe}
+            />
+          ) : (
+            <button
+              className={`${activeTab === label ? 'active' : ''} ${isBigYellow ? 'side-nav-air-yellow' : ''}`}
+              data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+              key={label}
+              onClick={() => setActiveTab(label)}
+            >
+              <div className={isBigYellow ? 'air-big-round-icon' : ''}>
+                <Icon size={isBigYellow ? 22 : 17} />
+              </div>
+              {label === 'Saved' ? 'Saved locations' : label}
+            </button>
+          )
+        )}
       </nav>
 
       <div className="saved-locations">
@@ -2799,6 +2842,7 @@ function AirQualityView({
   visibilityKm,
   settings,
   onUseCurrentLocation,
+  onOpenGlobe,
 }: {
   air: AirQuality | null;
   location: Location;
@@ -2806,6 +2850,7 @@ function AirQualityView({
   visibilityKm: number;
   settings: AppSettings;
   onUseCurrentLocation: () => void;
+  onOpenGlobe?: () => void;
 }) {
   const currentAir = air?.current;
   const usAqi = currentAir?.us_aqi ?? 0;
@@ -2815,7 +2860,7 @@ function AirQualityView({
   // Scale pointer position (0 to 300 AQI -> 0% to 100%)
   const pointerPercent = clamp((usAqi / 300) * 100, 3, 97);
 
-  const pollutants = [
+  const pollutants: PollutantItem[] = [
     {
       id: 'pm2_5',
       name: 'Fine Particles',
@@ -2828,6 +2873,19 @@ function AirQualityView({
       statusColor: (currentAir?.pm2_5 ?? 0) <= 12 ? '#48bb78' : (currentAir?.pm2_5 ?? 0) <= 35.4 ? '#ecc94b' : '#e53e3e',
       progress: clamp(((currentAir?.pm2_5 ?? 0) / 60) * 100, 5, 100),
       desc: 'Microscopic particles under 2.5 µm from motor exhausts, heating combustion, and wildfire smoke.',
+      sources: [
+        'Automotive combustion (diesel engines, exhaust tailpipe emissions, and brake soot)',
+        'Fossil fuel power generation and industrial chemical plants',
+        'Residential wood stoves, fireplaces, and biomass heating',
+        'Wildfires, agricultural field burning, and regional smoke plumes',
+      ],
+      healthRisks: [
+        'Penetrates deeply past upper airways into terminal pulmonary alveoli',
+        'Crosses alveolar-capillary barrier directly into blood circulation',
+        'Triggers acute asthma attacks, wheezing, and reduced lung capacity',
+        'Linked to cardiovascular inflammation, arterial stiffness, and cardiac events',
+      ],
+      guideline: 'Safe threshold: ≤ 12.0 µg/m³ (WHO target: ≤ 5 µg/m³ annual)',
     },
     {
       id: 'pm10',
@@ -2841,6 +2899,19 @@ function AirQualityView({
       statusColor: (currentAir?.pm10 ?? 0) <= 54 ? '#48bb78' : (currentAir?.pm10 ?? 0) <= 154 ? '#ecc94b' : '#e53e3e',
       progress: clamp(((currentAir?.pm10 ?? 0) / 150) * 100, 5, 100),
       desc: 'Inhalable airborne dust, pollen, road grit, and mechanical soil particles up to 10 µm.',
+      sources: [
+        'Resuspended road surface dust and tire-wear fragments',
+        'Construction, excavation, and demolition worksites',
+        'Agricultural harvesting, land clearing, and topsoil tilling',
+        'Crushed rock quarries, cement processing, and windblown desert dust',
+      ],
+      healthRisks: [
+        'Deposits along nasal passages, pharynx, trachea, and bronchial tubes',
+        'Induces persistent coughing, throat burning, and ocular irritation',
+        'Severely aggravates Chronic Obstructive Pulmonary Disease (COPD)',
+        'Elevates respiratory infection susceptibility and childhood wheezing',
+      ],
+      guideline: 'Safe threshold: ≤ 54.0 µg/m³ (WHO target: ≤ 15 µg/m³ annual)',
     },
     {
       id: 'ozone',
@@ -2854,6 +2925,19 @@ function AirQualityView({
       statusColor: (currentAir?.ozone ?? 0) <= 100 ? '#48bb78' : (currentAir?.ozone ?? 0) <= 160 ? '#ecc94b' : '#e53e3e',
       progress: clamp(((currentAir?.ozone ?? 0) / 200) * 100, 5, 100),
       desc: 'Secondary gas created when sunlight reacts with industrial nitrogen oxides and organic vapors.',
+      sources: [
+        'Photochemical reaction between sunlight and vehicular nitrogen oxides (NOx)',
+        'Volatile organic compounds (VOCs) evaporating from paints and solvents',
+        'Gasoline vapor emissions from fueling depots and industrial refineries',
+        'Chemical plant discharges baking under hot stagnant summer sunshine',
+      ],
+      healthRisks: [
+        'Potent oxidant that inflames respiratory epithelial tissues like a sunburn',
+        'Causes acute airway constriction, chest tightness, and painful breathing',
+        'Substantially worsens asthma attacks in active adults and children outdoors',
+        'Reduces overall pulmonary vital capacity and athletic stamina',
+      ],
+      guideline: 'Safe threshold: ≤ 100 µg/m³ (8-hour maximum mean)',
     },
     {
       id: 'no2',
@@ -2867,6 +2951,19 @@ function AirQualityView({
       statusColor: (currentAir?.nitrogen_dioxide ?? 0) <= 40 ? '#48bb78' : (currentAir?.nitrogen_dioxide ?? 0) <= 100 ? '#ecc94b' : '#e53e3e',
       progress: clamp(((currentAir?.nitrogen_dioxide ?? 0) / 100) * 100, 5, 100),
       desc: 'Toxic gas emitted primarily from automotive combustion engines and thermal power generation.',
+      sources: [
+        'High-temperature internal combustion in cars, buses, and diesel trucks',
+        'Natural gas and coal-fired electricity generation stations',
+        'Commercial boilers, incinerators, and petrochemical manufacturing',
+        'Indoor unvented gas cookers, ovens, and space heaters',
+      ],
+      healthRisks: [
+        'Corrodes bronchial mucous membranes and induces airway inflammation',
+        'Exacerbates pediatric asthma and increases bronchitis incidence',
+        'Inhibits lung growth and vital capacity development in young children',
+        'Heightens pulmonary sensitivity to allergens and viral infections',
+      ],
+      guideline: 'Safe threshold: ≤ 40.0 µg/m³ (WHO target: ≤ 10 µg/m³ annual)',
     },
     {
       id: 'so2',
@@ -2880,6 +2977,19 @@ function AirQualityView({
       statusColor: (currentAir?.sulphur_dioxide ?? 0) <= 20 ? '#48bb78' : '#e53e3e',
       progress: clamp(((currentAir?.sulphur_dioxide ?? 0) / 60) * 100, 5, 100),
       desc: 'Pungent gas produced from burning high-sulfur fossil fuels, refineries, and metal processing.',
+      sources: [
+        'Combustion of sulfur-rich coal and heavy bunker oil in power stations',
+        'Smelting of sulfide-containing mineral ores (copper, zinc, and iron)',
+        'Maritime container vessels burning residual heavy fuel oil',
+        'Petroleum refining and natural geothermal/volcanic emissions',
+      ],
+      healthRisks: [
+        'Hydrolyzes into sulfurous acid on moist lung mucosal surfaces',
+        'Triggers rapid reflex bronchospasm and wheezing within 5 minutes',
+        'Induces throat burning, severe coughing, and rhinorrhea',
+        'Contributes to atmospheric sulfate aerosol formation and acid rain',
+      ],
+      guideline: 'Safe threshold: ≤ 20.0 µg/m³ (24-hour mean guideline)',
     },
     {
       id: 'co',
@@ -2893,6 +3003,19 @@ function AirQualityView({
       statusColor: (currentAir?.carbon_monoxide ?? 0) <= 4400 ? '#48bb78' : '#e53e3e',
       progress: clamp(((currentAir?.carbon_monoxide ?? 0) / 9000) * 100, 5, 100),
       desc: 'Colorless, odorless gas generated from incomplete combustion of gasoline, gas, and biomass.',
+      sources: [
+        'Incomplete combustion in gasoline engine exhausts and idling vehicles',
+        'Malfunctioning residential gas furnaces, water boilers, and heaters',
+        'Indoor wood fireplaces, charcoal grills, and tobacco smoke',
+        'Portable fuel generators and enclosed small combustion tools',
+      ],
+      healthRisks: [
+        'Binds to blood hemoglobin with 200× affinity over oxygen, forming COHb',
+        'Starves vital organs (myocardium and cerebral cortex) of oxygen',
+        'Triggers dizziness, headaches, nausea, confusion, and visual impairment',
+        'Aggravates myocardial ischemia and angina pectoris in cardiac patients',
+      ],
+      guideline: 'Safe threshold: ≤ 4,400 µg/m³ (8-hour standard)',
     },
   ];
 
@@ -2908,7 +3031,7 @@ function AirQualityView({
   return (
     <div className="aqi-view-container animate-rise" data-testid="container-air-quality-view">
       {/* Top Banner with Location and Controls */}
-      <div className="section-heading" style={{ marginBottom: 0 }}>
+      <div className="section-heading flex items-center justify-between flex-wrap gap-3" style={{ marginBottom: 0 }}>
         <div>
           <div className="eyebrow">Atmospheric Chemistry & Sensors</div>
           <h2 className="section-title" style={{ fontSize: 24, marginTop: 4 }}>
@@ -2933,6 +3056,21 @@ function AirQualityView({
             </span>
           </div>
         </div>
+
+        {onOpenGlobe && (
+          <button
+            onClick={onOpenGlobe}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold text-xs transition shadow-md shadow-amber-400/25 border border-amber-300/40"
+            title="Open interactive 3D Globe with active location & passing clouds (Or long-press the Air Quality tab anytime)"
+            data-testid="button-open-3d-globe-from-aqi"
+          >
+            <Globe2 size={16} />
+            <span>Open 3D Earth Globe</span>
+            <span className="hidden sm:inline text-[10px] bg-slate-900/15 px-1.5 py-0.5 rounded font-mono font-normal">
+              Long press tab
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Hero AQI Dial Card */}
@@ -3040,116 +3178,38 @@ function AirQualityView({
         </div>
       </section>
 
-      {/* 6 Key Pollutants Grid */}
+      {/* 6 Key Pollutants Grid with Interactive Tooltips */}
       <div className="section-block">
-        <div className="section-heading">
+        <div className="section-heading flex items-center justify-between flex-wrap gap-2">
           <div>
             <div className="eyebrow">Atmospheric Contaminants</div>
             <h2 className="section-title">Individual Pollutant Concentrations at {location.name}</h2>
           </div>
-          <span className="section-note">Measured in micrograms per cubic meter (µg/m³)</span>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/70 px-3 py-1.5 rounded-full border border-border">
+            <Info size={13} className="text-primary" />
+            <span>Hover or tap any pollutant card for sources & specific health risks</span>
+          </div>
         </div>
 
         <div className="aqi-pollutants-grid">
           {pollutants.map((item) => (
-            <div className="pollutant-card" key={item.id} data-testid={`card-pollutant-${item.id}`}>
-              <div>
-                <div className="pollutant-header">
-                  <div>
-                    <span className="pollutant-name">{item.name}</span>
-                    <span className="pollutant-formula">({item.formula})</span>
-                  </div>
-                  <span
-                    className="pollutant-badge"
-                    style={{
-                      color: item.statusColor,
-                      backgroundColor: `${item.statusColor}1f`,
-                    }}
-                  >
-                    {item.status}
-                  </span>
-                </div>
-
-                <div className="pollutant-value-row" style={{ marginTop: 12 }}>
-                  <span className="pollutant-num">{item.value}</span>
-                  <span className="pollutant-unit">{item.unit}</span>
-                  <span style={{ fontSize: 11, color: 'hsl(var(--muted-foreground))', marginLeft: 'auto' }}>
-                    Safe: ≤ {item.safeMax}
-                  </span>
-                </div>
-
-                <div className="pollutant-progress-track" style={{ marginTop: 10 }}>
-                  <div
-                    className="pollutant-progress-fill"
-                    style={{
-                      width: `${item.progress}%`,
-                      backgroundColor: item.statusColor,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <p className="pollutant-footer">{item.desc}</p>
-            </div>
+            <PollutantCard key={item.id} item={item} />
           ))}
         </div>
       </div>
 
-      {/* Actionable Health & Lifestyle Guidance */}
-      <div className="section-block">
-        <div className="section-heading">
-          <div>
-            <div className="eyebrow">Health Guidance</div>
-            <h2 className="section-title">Practical Lifestyle & Activity Advice</h2>
-          </div>
-          <span className="section-note">Tailored for local air conditions at {location.name} (AQI {usAqi})</span>
-        </div>
-
-        <div className="aqi-guidance-grid">
-          <div className="guidance-card" data-testid="card-guidance-exercise">
-            <div className="guidance-icon-box">
-              <HeartPulse size={18} />
-            </div>
-            <h4 className="guidance-title">Outdoor Exercise & Sports</h4>
-            <p className="guidance-body">{aqiInfo.exerciseAdvice}</p>
-          </div>
-
-          <div className="guidance-card" data-testid="card-guidance-sensitive">
-            <div className="guidance-icon-box">
-              <ShieldCheck size={18} />
-            </div>
-            <h4 className="guidance-title">Sensitive Groups & Asthma</h4>
-            <p className="guidance-body">{aqiInfo.healthAdvice}</p>
-          </div>
-
-          <div className="guidance-card" data-testid="card-guidance-ventilation">
-            <div className="guidance-icon-box">
-              <Wind size={18} />
-            </div>
-            <h4 className="guidance-title">Ventilation & Windows</h4>
-            <p className="guidance-body">{aqiInfo.ventilationAdvice}</p>
-          </div>
-
-          <div className="guidance-card" data-testid="card-guidance-mask">
-            <div className="guidance-icon-box">
-              <CheckCircle2 size={18} />
-            </div>
-            <h4 className="guidance-title">Mask & Respiratory Care</h4>
-            <p className="guidance-body">{aqiInfo.maskAdvice}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 12-Hour Hourly Air Quality Trend */}
+      {/* 12-Hour AQI Trend Visualization using Recharts (Spike & Improvement Identification) */}
       {nextHours.length > 0 && (
-        <div className="section-block">
-          <div className="section-heading">
-            <div>
-              <div className="eyebrow">Projected Timeline</div>
-              <h2 className="section-title">Next 12 Hours Air Quality Forecast for {location.name}</h2>
-            </div>
-            <span className="section-note">Hourly projected AQI & PM2.5 levels at {location.name}</span>
-          </div>
+        <div className="section-block space-y-4">
+          <AqiTrendChart
+            times={nextHours}
+            hourlyAqi={nextHours.map((_, idx) => hourlyAqi[currentHourlyIdx + idx] ?? usAqi)}
+            hourlyPm25={nextHours.map((_, idx) => hourlyPm25[currentHourlyIdx + idx] ?? (currentAir?.pm2_5 ?? 0))}
+            currentAqi={usAqi}
+            timezone={forecast.timezone}
+            timeFormat={settings.timeFormat}
+            locationName={location.name}
+          />
 
           <div className="aqi-forecast-strip" data-testid="strip-aqi-forecast">
             {nextHours.map((time, idx) => {
