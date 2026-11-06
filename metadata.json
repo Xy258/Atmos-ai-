@@ -1,0 +1,8 @@
+{
+  "name": "Atmos Weather",
+  "description": "Real-time weather forecast, air quality insights, and AI weather assistant built on Atmos Weather",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
