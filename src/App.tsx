@@ -17,6 +17,13 @@ import { AqiTrendChart } from '@/components/AqiTrendChart';
 import { PollutantCard, type PollutantItem } from '@/components/PollutantCard';
 import { DynamicWeatherBackdrop } from '@/components/DynamicWeatherBackdrop';
 import { AtmosphericSoundscapeToggle } from '@/components/AtmosphericSoundscapeToggle';
+import { AtmosphericStateWeatherAnimation } from '@/components/AtmosphericStateWeatherAnimation';
+import { PrecipitationMiniChart } from '@/components/PrecipitationMiniChart';
+import { VisibilityClarityMini } from '@/components/VisibilityClarityMini';
+import { HumidityMiniMeter } from '@/components/HumidityMiniMeter';
+import { PressureMiniGauge } from '@/components/PressureMiniGauge';
+import { FeelsLikeMiniMeter } from '@/components/FeelsLikeMiniMeter';
+import { CloudCoverMiniMeter } from '@/components/CloudCoverMiniMeter';
 import { useGenerateWeatherInsight, useHealthCheck } from '@workspace/api-client-react';
 import {
   Activity,
@@ -66,6 +73,7 @@ import {
   Sun,
   Sunrise,
   Sunset,
+  Thermometer,
   Trash2,
   Trees,
   Umbrella,
@@ -103,6 +111,8 @@ export type Forecast = {
     temperature_2m: number;
     relative_humidity_2m: number;
     apparent_temperature: number;
+    surface_pressure?: number;
+    dew_point_2m?: number;
     is_day: number;
     precipitation: number;
     rain: number;
@@ -117,6 +127,8 @@ export type Forecast = {
     time: string[];
     temperature_2m: number[];
     apparent_temperature?: number[];
+    surface_pressure?: number[];
+    dew_point_2m?: number[];
     precipitation_probability: number[];
     weather_code: number[];
     relative_humidity_2m: number[];
@@ -1326,14 +1338,17 @@ function Home() {
   const isActualDaylight = forecast?.current ? forecast.current.is_day === 1 : true;
   const effectiveTheme = getEffectiveTheme(settings.theme, isActualDaylight);
 
-  // Synchronize effective theme (Day/Night) with document root class & localStorage
+  // Synchronize effective theme (Day/Night) with document root class, meta theme-color & localStorage
   useEffect(() => {
     try {
       localStorage.setItem('atmos_settings', JSON.stringify(settings));
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]');
       if (effectiveTheme === 'night') {
         document.documentElement.classList.add('dark');
+        if (metaThemeColor) metaThemeColor.setAttribute('content', '#070c18');
       } else {
         document.documentElement.classList.remove('dark');
+        if (metaThemeColor) metaThemeColor.setAttribute('content', '#e0f2fe');
       }
     } catch {
       // ignore
@@ -1390,7 +1405,7 @@ function Home() {
       const isDeviceOffline = typeof navigator !== 'undefined' && !navigator.onLine;
 
       const params = `latitude=${next.latitude}&longitude=${next.longitude}&timezone=auto`;
-      const forecastUrl = `https://api.open-meteo.com/v1/forecast?${params}&forecast_days=7&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,rain,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,visibility&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,wind_speed_10m_max,uv_index_max`;
+      const forecastUrl = `https://api.open-meteo.com/v1/forecast?${params}&forecast_days=7&current=temperature_2m,relative_humidity_2m,apparent_temperature,surface_pressure,dew_point_2m,is_day,precipitation,rain,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&hourly=temperature_2m,apparent_temperature,surface_pressure,dew_point_2m,precipitation_probability,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,visibility&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,wind_speed_10m_max,uv_index_max`;
       const airQualityUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?${params}&current=us_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,aerosol_optical_depth,dust,european_aqi&hourly=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,european_aqi`;
       const [nextForecast, nextAir] = await Promise.all([
         getJson<Forecast>(forecastUrl, undefined, isRefresh),
@@ -1757,22 +1772,8 @@ function Home() {
           <div className="content">
             <div className="heading-row animate-rise">
               <div>
-                <div className="eyebrow flex items-center flex-wrap gap-2" data-testid="text-conditions-eyebrow">
+                <div className="eyebrow" data-testid="text-conditions-eyebrow">
                   <span>Live conditions / {forecast?.timezone?.replace('_', ' ') ?? 'Local time'}</span>
-                  {altitudeValue != null && (
-                    <span
-                      className="altitude-badge"
-                      data-testid="badge-location-altitude"
-                      style={{ transform: 'translateX(-40px)' }}
-                      title={`Physical Altitude / Terrain Elevation: ${Math.round(altitudeValue)} m (${Math.round(altitudeValue * 3.28084)} ft) above sea level`}
-                    >
-                      <Mountain size={11} className="shrink-0 opacity-80 text-emerald-500 dark:text-emerald-400" />
-                      <span>my altitude: {Math.round(altitudeValue)} m</span>
-                      {settings.tempUnit === 'F' && (
-                        <span className="opacity-70 text-[9px]">({Math.round(altitudeValue * 3.28084)} ft)</span>
-                      )}
-                    </span>
-                  )}
                 </div>
                 <h1 className="location-title" data-testid="text-location-name">
                   {location.name}
@@ -1787,52 +1788,71 @@ function Home() {
                     ? localLabel(forecast.timezone, settings.timeFormat)
                     : 'Connecting to the sky...'}
                 </div>
-              </div>
-              <div
-                className={`updated-note ${!isOnline || isViewingCached ? 'is-cached' : 'is-live'}`}
-                data-testid="status-feed-indicator"
-                title={
-                  !isOnline
-                    ? 'Offline: You are viewing cached weather and air quality records from your previous sync.'
-                    : isViewingCached
-                    ? 'Live feed unreachable: Viewing cached weather data.'
-                    : 'Online: Live high-resolution meteorological feed active from Open-Meteo.'
-                }
-              >
-                <span
-                  className={`signal-dot ${
+                {/* Placed directly under the date/time matching user screenshot */}
+                <div
+                  className={`updated-note feed-under-time ${!isOnline || isViewingCached ? 'is-cached' : 'is-live'}`}
+                  data-testid="status-feed-indicator"
+                  title={
                     !isOnline
-                      ? 'signal-dot-offline'
+                      ? 'Offline: You are viewing cached weather and air quality records from your previous sync.'
                       : isViewingCached
-                      ? 'signal-dot-cached'
-                      : 'signal-dot-live'
-                  }`}
-                  data-testid="signal-dot-indicator"
-                  aria-label={
-                    !isOnline
-                      ? 'Offline - cached data'
-                      : isViewingCached
-                      ? 'Viewing cached data'
-                      : 'Live weather feed'
+                      ? 'Live feed unreachable: Viewing cached weather data.'
+                      : 'Online: Live high-resolution meteorological feed active from Open-Meteo.'
                   }
-                />
-                <span className="feed-source-name font-medium">
-                  Open-Meteo {!isOnline ? '(Cached)' : isViewingCached ? '(Cached)' : 'High-Resolution Feed'}
-                </span>
-                <br />
-                <span
-                  className={`feed-status-subtext ${
-                    !isOnline || isViewingCached ? 'text-amber-600 dark:text-amber-400 font-medium' : ''
-                  }`}
                 >
-                  {refreshing
-                    ? 'Refreshing now...'
-                    : !isOnline
-                    ? 'Offline · Viewing cached data'
-                    : isViewingCached
-                    ? 'Feed unreachable · Using cache'
-                    : 'Live meteorological radar'}
-                </span>
+                  <div className="feed-header-line">
+                    <span
+                      className={`signal-dot ${
+                        !isOnline
+                          ? 'signal-dot-offline'
+                          : isViewingCached
+                          ? 'signal-dot-cached'
+                          : 'signal-dot-live'
+                      }`}
+                      data-testid="signal-dot-indicator"
+                      aria-label={
+                        !isOnline
+                          ? 'Offline - cached data'
+                          : isViewingCached
+                          ? 'Viewing cached data'
+                          : 'Live weather feed'
+                      }
+                    />
+                    <span className="feed-source-name font-mono font-medium">
+                      Open-Meteo {!isOnline ? '(Cached)' : isViewingCached ? '(Cached)' : 'High-Resolution Feed'}
+                    </span>
+                  </div>
+                  <div className="feed-status-line">
+                    <span
+                      className={`feed-status-subtext font-mono ${
+                        !isOnline || isViewingCached ? 'text-amber-600 dark:text-amber-400 font-medium' : ''
+                      }`}
+                    >
+                      {refreshing
+                        ? 'Refreshing now...'
+                        : !isOnline
+                        ? 'Offline · Viewing cached data'
+                        : isViewingCached
+                        ? 'Feed unreachable · Using cache'
+                        : 'Live meteorological radar'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="heading-corner-group">
+                {altitudeValue != null && (
+                  <div
+                    className="altitude-corner-badge"
+                    data-testid="badge-location-altitude"
+                    title={`Physical Altitude / Terrain Elevation: ${Math.round(altitudeValue)} m (${Math.round(altitudeValue * 3.28084)} ft) above sea level`}
+                  >
+                    <Mountain size={12} className="shrink-0 text-emerald-500 dark:text-emerald-400" />
+                    <span>my altitude: {Math.round(altitudeValue)} m</span>
+                    {settings.tempUnit === 'F' && (
+                      <span className="opacity-70 text-[9px]">({Math.round(altitudeValue * 3.28084)} ft)</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2197,17 +2217,13 @@ function TodayView({
             themeKey={`${atmosphericTheme.id}-${activeWeatherCode}-${activeIsDay ? 'day' : 'night'}`}
           />
 
-          {/* Subtle Particle-based Rainfall Animation Overlay */}
-          <AnimatePresence>
-            {isRainOrShowers(activeWeatherCode) && (
-              <RainParticleOverlay
-                key={`rain-overlay-${activeWeatherCode}`}
-                weatherCode={activeWeatherCode}
-                windSpeed={activeWindSpeed}
-                windDirection={current.wind_direction_10m}
-              />
-            )}
-          </AnimatePresence>
+          {/* Dynamic Weather Animation inside Atmospheric State Card (Rain, Snow, Thunderstorm, Sun, Stars, Clouds) */}
+          <AtmosphericStateWeatherAnimation
+            weatherCode={activeWeatherCode}
+            isDay={activeIsDay}
+            windSpeed={activeWindSpeed}
+            windDirection={current.wind_direction_10m}
+          />
 
           {/* Radar / Atmospheric Wave Geometry Arcs */}
           <AnimatePresence initial={false}>
@@ -2236,42 +2252,6 @@ function TodayView({
             <div>
               <div className="atmospheric-kicker-row">
                 <span className="atmospheric-kicker">Atmospheric state</span>
-                <button
-                  type="button"
-                  className="atmospheric-theme-pill"
-                  onClick={onCycleTheme}
-                  data-testid="button-cycle-theme-atmospheric"
-                  title={`Theme: ${
-                    settings.theme === 'auto'
-                      ? `Auto (locked to ${activeIsDay ? 'Day' : 'Night'} from actual local weather)`
-                      : settings.theme === 'day' || settings.theme === 'light'
-                      ? 'Locked Day'
-                      : 'Locked Night'
-                  } · Click to cycle Auto / Day / Night`}
-                >
-                  {settings.theme === 'auto' ? (
-                    <>
-                      <Sparkles size={10} />
-                      <span>Auto · {activeIsDay ? 'Day' : 'Night'}</span>
-                    </>
-                  ) : activeIsDay ? (
-                    <>
-                      <Sun size={10} />
-                      <span>Day lock</span>
-                    </>
-                  ) : (
-                    <>
-                      <Moon size={10} />
-                      <span>Night lock</span>
-                    </>
-                  )}
-                </button>
-                <AtmosphericSoundscapeToggle
-                  weatherCode={activeWeatherCode}
-                  isDay={activeIsDay}
-                  windSpeedKmh={activeWindSpeed}
-                  variant="card"
-                />
                 {isViewingSelectedHour && (
                   <button
                     type="button"
@@ -2393,6 +2373,7 @@ function TodayView({
         initial="hidden"
         animate="visible"
       >
+        {/* 1. Wind & Rose Vector */}
         <DataCard
           icon={Wind}
           label="Wind"
@@ -2410,6 +2391,8 @@ function TodayView({
             startIndex={hourlyStart}
           />
         </DataCard>
+
+        {/* 2. Precipitation Probability & 6-Hour Mini Chart */}
         <DataCard
           icon={Umbrella}
           label="Precipitation"
@@ -2417,15 +2400,27 @@ function TodayView({
           unit="%"
           caption={
             current.precipitation > 0
-              ? `${formatPrecipDisplay(current.precipitation, settings.precipUnit)} fallen`
+              ? `${formatPrecipDisplay(current.precipitation, settings.precipUnit)} active rainfall`
               : 'Probability this hour'
           }
-        />
+        >
+          <PrecipitationMiniChart
+            hourlyProbability={forecast.hourly.precipitation_probability}
+            hourlyTimes={forecast.hourly.time}
+            startIndex={hourlyStart}
+            currentPrecipitationMm={current.precipitation}
+            precipUnit={settings.precipUnit}
+            timezone={forecast.timezone}
+            timeFormat={settings.timeFormat}
+          />
+        </DataCard>
+
+        {/* 3. UV Index & Hourly Protection Timeline */}
         <DataCard
           icon={Sun}
           label="UV index"
           value={`${Math.round(current.uv_index)}`}
-          unit={`/ 11`}
+          unit="/ 11"
           caption={uvLabel(current.uv_index)}
         >
           <UvIndexMiniChart
@@ -2436,6 +2431,8 @@ function TodayView({
             timeFormat={settings.timeFormat}
           />
         </DataCard>
+
+        {/* 4. Visibility & Optical Clarity Horizon Meter */}
         <DataCard
           icon={Gauge}
           label="Visibility"
@@ -2446,7 +2443,106 @@ function TodayView({
           }
           unit={settings.windUnit === 'mph' ? 'mi' : 'km'}
           caption="Horizon optical clarity"
-        />
+        >
+          <VisibilityClarityMini
+            visibilityKm={visibilityKm}
+            unit={settings.windUnit === 'mph' ? 'mi' : 'km'}
+            relativeHumidity={current.relative_humidity_2m}
+            dewPointC={current.dew_point_2m}
+          />
+        </DataCard>
+
+        {/* 5. Humidity & Dew Point Meter */}
+        <DataCard
+          icon={Droplets}
+          label="Humidity"
+          value={`${Math.round(current.relative_humidity_2m)}`}
+          unit="%"
+          caption={`Dew point ${
+            current.dew_point_2m != null
+              ? `${Math.round(
+                  settings.tempUnit === 'F'
+                    ? (current.dew_point_2m * 9) / 5 + 32
+                    : current.dew_point_2m
+                )}°${settings.tempUnit}`
+              : `${Math.round(current.relative_humidity_2m * 0.18 + 5)}°${settings.tempUnit}`
+          }`}
+        >
+          <HumidityMiniMeter
+            relativeHumidity={current.relative_humidity_2m}
+            dewPointC={current.dew_point_2m}
+            tempUnit={settings.tempUnit}
+          />
+        </DataCard>
+
+        {/* 6. Barometric Pressure & Trend */}
+        <DataCard
+          icon={Compass}
+          label="Pressure"
+          value={
+            settings.tempUnit === 'F' && current.surface_pressure
+              ? (current.surface_pressure * 0.02953).toFixed(2)
+              : current.surface_pressure
+              ? `${Math.round(current.surface_pressure)}`
+              : '1013'
+          }
+          unit={settings.tempUnit === 'F' ? 'inHg' : 'hPa'}
+          caption={
+            current.surface_pressure && current.surface_pressure > 1022
+              ? 'High pressure system · Fair'
+              : current.surface_pressure && current.surface_pressure < 1005
+              ? 'Low pressure trough · Front'
+              : 'Standard barometric baseline'
+          }
+        >
+          <PressureMiniGauge
+            surfacePressureHpa={current.surface_pressure ?? 1013}
+            pressureTrend="steady"
+            elevationM={forecast.elevation ?? location.elevation ?? undefined}
+          />
+        </DataCard>
+
+        {/* 7. Real Feel & Thermal Comfort Breakdown */}
+        <DataCard
+          icon={Thermometer}
+          label="Feels like"
+          value={`${Math.round(current.apparent_temperature)}`}
+          unit={`°${settings.tempUnit}`}
+          caption={
+            Math.round(current.apparent_temperature) > Math.round(current.temperature_2m)
+              ? `${Math.round(current.apparent_temperature - current.temperature_2m)}° warmer due to humidity`
+              : Math.round(current.apparent_temperature) < Math.round(current.temperature_2m)
+              ? `${Math.round(current.temperature_2m - current.apparent_temperature)}° cooler due to breeze`
+              : 'Matches actual temperature'
+          }
+        >
+          <FeelsLikeMiniMeter
+            realTemp={current.temperature_2m}
+            apparentTemp={current.apparent_temperature}
+            windSpeedKmh={current.wind_speed_10m}
+            humidityPercent={current.relative_humidity_2m}
+            tempUnit={settings.tempUnit}
+          />
+        </DataCard>
+
+        {/* 8. Cloud Cover & Sky Density */}
+        <DataCard
+          icon={Cloud}
+          label="Cloud cover"
+          value={`${Math.round(current.cloud_cover)}`}
+          unit="%"
+          caption={
+            current.cloud_cover >= 80
+              ? 'Heavy overcast layer'
+              : current.cloud_cover >= 50
+              ? 'Mostly cloudy conditions'
+              : current.cloud_cover >= 20
+              ? 'Scattered cumulus clouds'
+              : 'Clear atmospheric sky'
+          }
+        >
+          <CloudCoverMiniMeter cloudCoverPercent={current.cloud_cover} />
+        </DataCard>
       </motion.div>
 
       {/* Interactive Air Quality Overview Card */}
