@@ -4,6 +4,10 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  BarChart,
+  Bar,
+  Cell,
+  LabelList,
   XAxis,
   YAxis,
   Tooltip,
@@ -168,6 +172,75 @@ function CustomChartTooltip({ active, payload, tempUnit }: CustomTooltipProps) {
   );
 }
 
+// Custom Tooltip for Rain Probability Bar Chart
+interface CustomRainTooltipProps {
+  active?: boolean;
+  payload?: any[];
+  tempUnit: 'C' | 'F';
+}
+
+function CustomRainTooltip({ active, payload, tempUnit }: CustomRainTooltipProps) {
+  if (!active || !payload || !payload.length) return null;
+  const point = payload[0].payload as HourlyChartPoint;
+  const condition = WEATHER_NAMES[point.weatherCode] ?? 'Changing skies';
+  const rainDescription =
+    point.pop >= 70
+      ? 'High likelihood of rain or showers'
+      : point.pop >= 40
+      ? 'Moderate chance of precipitation'
+      : point.pop >= 15
+      ? 'Low chance of rain or drizzle'
+      : point.pop > 0
+      ? 'Isolated brief sprinkle possible'
+      : 'Dry / minimal precipitation risk';
+
+  return (
+    <div
+      className="chart-custom-tooltip"
+      style={{
+        background: 'hsl(var(--card) / 0.94)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        border: '1px solid hsl(var(--border))',
+        borderRadius: '12px',
+        padding: '10px 14px',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.25)',
+        minWidth: '160px',
+        pointerEvents: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '4px' }}>
+        <span style={{ fontFamily: 'var(--app-font-mono)', fontSize: '11px', fontWeight: 600, color: 'hsl(var(--foreground))' }}>
+          {point.timeLabel}
+        </span>
+        <span style={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))' }}>
+          {point.isDay ? 'Day' : 'Night'}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', margin: '4px 0' }}>
+        <span style={{ fontFamily: 'var(--app-font-serif)', fontSize: '24px', fontWeight: 700, color: '#38bdf8', letterSpacing: '-0.03em', lineHeight: 1 }}>
+          {point.pop}%
+        </span>
+        <span style={{ fontFamily: 'var(--app-font-mono)', fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>
+          rain likelihood
+        </span>
+      </div>
+
+      <div style={{ fontSize: '11px', color: 'hsl(var(--foreground))', fontWeight: 500, marginBottom: '2px' }}>
+        {rainDescription}
+      </div>
+
+      <div style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', paddingTop: '4px', borderTop: '1px solid hsl(var(--border) / 0.6)' }}>
+        <Droplets size={11} color="#38bdf8" />
+        <span>Temp: {point.temperature}°{tempUnit}</span>
+        <span>·</span>
+        <span>{condition}</span>
+      </div>
+    </div>
+  );
+}
+
 export function HourlyTemperatureChart({
   times,
   temperatures,
@@ -181,7 +254,10 @@ export function HourlyTemperatureChart({
   onSelectHour,
   className = '',
 }: HourlyTemperatureChartProps) {
-  // Build the 12-hour data points
+  // Toggle between 12-hour focus and full 24-hour day
+  const [hoursCount, setHoursCount] = useState<12 | 24>(12);
+
+  // Build the hourly data points
   const chartData = useMemo(() => {
     return buildHourlyChartData({
       times,
@@ -190,7 +266,7 @@ export function HourlyTemperatureChart({
       precipProbabilities,
       weatherCodes,
       hourlyStart,
-      count: 12,
+      count: hoursCount,
       tempUnit,
       timeFormat,
       selectedHour,
@@ -202,13 +278,40 @@ export function HourlyTemperatureChart({
     precipProbabilities,
     weatherCodes,
     hourlyStart,
+    hoursCount,
     tempUnit,
     timeFormat,
     selectedHour,
   ]);
 
-  // Compute stats across the 12 hours
+  // Compute temperature stats across the selected range
   const stats = useMemo(() => calculateTemperatureStats(chartData), [chartData]);
+
+  // Compute rain stats across the selected range
+  const rainStats = useMemo(() => {
+    if (!chartData.length) {
+      return { maxPop: 0, peakTime: '--', avgPop: 0, hasRain: false };
+    }
+    let maxPop = 0;
+    let peakTime = chartData[0].timeLabel;
+    let totalPop = 0;
+
+    for (const pt of chartData) {
+      totalPop += pt.pop;
+      if (pt.pop > maxPop) {
+        maxPop = pt.pop;
+        peakTime = pt.timeLabel;
+      }
+    }
+
+    const avgPop = Math.round(totalPop / chartData.length);
+    return {
+      maxPop,
+      peakTime,
+      avgPop,
+      hasRain: maxPop > 0,
+    };
+  }, [chartData]);
 
   // Persistent coordinate tracking so indicator dot slides smoothly on selection changes
   const coordsMapRef = useRef<Record<number, { x: number; y: number }>>({});
@@ -243,7 +346,7 @@ export function HourlyTemperatureChart({
         border: '1px solid hsl(var(--card-border))',
         background: 'hsl(var(--card) / 0.76)',
         borderRadius: '17px',
-        padding: '16px 18px 12px',
+        padding: '16px 18px 14px',
         boxShadow: 'var(--shadow-sm)',
         marginTop: '12px',
         position: 'relative',
@@ -293,7 +396,7 @@ export function HourlyTemperatureChart({
                 color: 'hsl(var(--foreground))',
               }}
             >
-              12-Hour Temperature Trend
+              {hoursCount === 24 ? '24-Hour' : '12-Hour'} Temperature Trend
             </h3>
             <span
               style={{
@@ -302,12 +405,12 @@ export function HourlyTemperatureChart({
                 fontFamily: 'var(--app-font-mono)',
               }}
             >
-              Interactive line visualization · Tap point to select
+              Interactive trend curve · Tap point or bar to select time slot
             </span>
           </div>
         </div>
 
-        {/* Telemetry badges */}
+        {/* Telemetry badges & Range Switcher */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <div
             style={{
@@ -369,11 +472,62 @@ export function HourlyTemperatureChart({
                 : 'Steady'}
             </span>
           </div>
+
+          {/* Timeframe switch: 12h or 24h Day */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '2px',
+              borderRadius: '8px',
+              background: 'hsl(var(--muted) / 0.5)',
+              border: '1px solid hsl(var(--border) / 0.7)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setHoursCount(12)}
+              style={{
+                border: 'none',
+                background: hoursCount === 12 ? 'hsl(var(--card))' : 'transparent',
+                color: hoursCount === 12 ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                fontSize: '10px',
+                fontFamily: 'var(--app-font-mono)',
+                fontWeight: hoursCount === 12 ? 600 : 400,
+                padding: '2px 8px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                boxShadow: hoursCount === 12 ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              12h
+            </button>
+            <button
+              type="button"
+              onClick={() => setHoursCount(24)}
+              style={{
+                border: 'none',
+                background: hoursCount === 24 ? 'hsl(var(--card))' : 'transparent',
+                color: hoursCount === 24 ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
+                fontSize: '10px',
+                fontFamily: 'var(--app-font-mono)',
+                fontWeight: hoursCount === 24 ? 600 : 400,
+                padding: '2px 8px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                boxShadow: hoursCount === 24 ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              24h Day
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Recharts Responsive Line Chart Stage - outline none */}
-      <div style={{ width: '100%', height: 185, position: 'relative', outline: 'none' }} tabIndex={-1}>
+      <div style={{ width: '100%', height: 175, position: 'relative', outline: 'none' }} tabIndex={-1}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}
@@ -409,7 +563,7 @@ export function HourlyTemperatureChart({
               axisLine={{ stroke: 'hsl(var(--border))', strokeOpacity: 0.6 }}
               tick={{
                 fill: 'hsl(var(--muted-foreground))',
-                fontSize: 10,
+                fontSize: hoursCount === 24 ? 9 : 10,
                 fontFamily: 'var(--app-font-mono)',
               }}
               dy={6}
@@ -506,6 +660,271 @@ export function HourlyTemperatureChart({
             </motion.g>
           </svg>
         )}
+      </div>
+
+      {/* --------------------------------------------------------------------- */}
+      {/* Sub-section: Rain Probability Bar Chart Below Temperature Trend Line  */}
+      {/* --------------------------------------------------------------------- */}
+      <div
+        style={{
+          borderTop: '1px solid hsl(var(--border) / 0.65)',
+          paddingTop: '14px',
+          marginTop: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '10px',
+          marginBottom: '8px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              width: '26px',
+              height: '26px',
+              borderRadius: '7px',
+              background: 'rgba(56, 189, 248, 0.16)',
+              color: '#38bdf8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Droplets size={15} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <h4
+                style={{
+                  fontFamily: 'var(--app-font-serif)',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  letterSpacing: '-0.02em',
+                  margin: 0,
+                  color: 'hsl(var(--foreground))',
+                }}
+              >
+                Rain Probability Throughout the Day
+              </h4>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontFamily: 'var(--app-font-mono)',
+                  fontSize: '9.5px',
+                  padding: '1px 6px',
+                  borderRadius: '999px',
+                  background: 'rgba(56, 189, 248, 0.1)',
+                  color: '#38bdf8',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                }}
+              >
+                % likelihood
+              </span>
+            </div>
+            <span
+              style={{
+                fontSize: '10.5px',
+                color: 'hsl(var(--muted-foreground))',
+                fontFamily: 'var(--app-font-mono)',
+              }}
+            >
+              Hourly precipitation chance · Tap bar to select hour
+            </span>
+          </div>
+        </div>
+
+        {/* Rain stats telemetry badges */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {rainStats.hasRain ? (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '3px 9px',
+                borderRadius: '999px',
+                background:
+                  rainStats.maxPop >= 50
+                    ? 'rgba(2, 132, 199, 0.18)'
+                    : 'rgba(56, 189, 248, 0.12)',
+                border:
+                  rainStats.maxPop >= 50
+                    ? '1px solid rgba(2, 132, 199, 0.4)'
+                    : '1px solid rgba(56, 189, 248, 0.28)',
+                color: rainStats.maxPop >= 50 ? '#0284c7' : '#38bdf8',
+                fontFamily: 'var(--app-font-mono)',
+                fontSize: '10.5px',
+                fontWeight: 500,
+              }}
+              title={`Peak rain chance of ${rainStats.maxPop}% at ${rainStats.peakTime}`}
+            >
+              <Droplets size={11} />
+              <span>Peak {rainStats.maxPop}% at {rainStats.peakTime}</span>
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '3px 9px',
+                borderRadius: '999px',
+                background: 'rgba(34, 197, 94, 0.12)',
+                border: '1px solid rgba(34, 197, 94, 0.28)',
+                color: '#15803d',
+                fontFamily: 'var(--app-font-mono)',
+                fontSize: '10.5px',
+                fontWeight: 500,
+              }}
+            >
+              <span>✨ 0% · Dry throughout the day</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Recharts Rain Probability Bar Chart Stage */}
+      <div
+        style={{ width: '100%', height: 130, position: 'relative', outline: 'none' }}
+        tabIndex={-1}
+        data-testid="chart-rain-probability-bars"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={chartData}
+            tabIndex={-1}
+            style={{ outline: 'none', userSelect: 'none' }}
+            margin={{ top: 16, right: 16, left: 6, bottom: 2 }}
+            onClick={(state: any) => {
+              if (state && state.activePayload && state.activePayload.length > 0) {
+                const pt = state.activePayload[0].payload as HourlyChartPoint;
+                if (pt && typeof pt.index === 'number') {
+                  onSelectHour(pt.index);
+                }
+              }
+            }}
+          >
+            <defs>
+              {/* Rain Bar Gradients based on probability level */}
+              <linearGradient id="rainBarLow" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#7dd3fc" stopOpacity={0.85} />
+                <stop offset="100%" stopColor="#38bdf8" stopOpacity={0.45} />
+              </linearGradient>
+
+              <linearGradient id="rainBarMed" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.95} />
+                <stop offset="100%" stopColor="#0284c7" stopOpacity={0.65} />
+              </linearGradient>
+
+              <linearGradient id="rainBarHigh" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
+                <stop offset="100%" stopColor="#2563eb" stopOpacity={0.8} />
+              </linearGradient>
+
+              <linearGradient id="rainBarSelected" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#a5f3fc" stopOpacity={1} />
+                <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.95} />
+              </linearGradient>
+
+              {/* Bar Glow Filter */}
+              <filter id="rainBarGlow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#38bdf8" floodOpacity="0.4" />
+              </filter>
+            </defs>
+
+            <CartesianGrid
+              strokeDasharray="3 3"
+              vertical={false}
+              stroke="hsl(var(--border))"
+              strokeOpacity={0.4}
+            />
+
+            <XAxis
+              dataKey="timeLabel"
+              tickLine={false}
+              axisLine={{ stroke: 'hsl(var(--border))', strokeOpacity: 0.6 }}
+              tick={{
+                fill: 'hsl(var(--muted-foreground))',
+                fontSize: hoursCount === 24 ? 9 : 10,
+                fontFamily: 'var(--app-font-mono)',
+              }}
+              dy={6}
+            />
+
+            <YAxis
+              domain={[0, 100]}
+              ticks={[0, 25, 50, 75, 100]}
+              tickLine={false}
+              axisLine={false}
+              tick={{
+                fill: 'hsl(var(--muted-foreground))',
+                fontSize: 9.5,
+                fontFamily: 'var(--app-font-mono)',
+              }}
+              unit="%"
+              width={42}
+            />
+
+            <Tooltip
+              content={<CustomRainTooltip tempUnit={tempUnit} />}
+              cursor={{ fill: 'hsl(var(--muted) / 0.35)', radius: 4 }}
+            />
+
+            <Bar
+              dataKey="pop"
+              name="Rain Probability"
+              minPointSize={3}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={hoursCount === 24 ? 18 : 28}
+              cursor="pointer"
+              isAnimationActive={true}
+              animationDuration={650}
+            >
+              <LabelList
+                dataKey="pop"
+                position="top"
+                formatter={(val: any) => (Number(val) > 0 ? `${val}%` : '')}
+                style={{
+                  fill: '#38bdf8',
+                  fontSize: hoursCount === 24 ? '8px' : '9.5px',
+                  fontFamily: 'var(--app-font-mono)',
+                  fontWeight: 600,
+                }}
+                dy={-3}
+              />
+              {chartData.map((entry) => {
+                const isSelected = entry.index === selectedHour;
+                let fill = 'url(#rainBarMed)';
+                if (isSelected) {
+                  fill = 'url(#rainBarSelected)';
+                } else if (entry.pop === 0) {
+                  fill = 'hsl(var(--muted-foreground))';
+                } else if (entry.pop <= 25) {
+                  fill = 'url(#rainBarLow)';
+                } else if (entry.pop > 65) {
+                  fill = 'url(#rainBarHigh)';
+                }
+
+                return (
+                  <Cell
+                    key={`rain-bar-${entry.index}`}
+                    fill={fill}
+                    stroke={isSelected ? '#38bdf8' : 'none'}
+                    strokeWidth={isSelected ? 1.8 : 0}
+                    opacity={entry.pop === 0 ? (isSelected ? 0.6 : 0.22) : isSelected ? 1 : 0.88}
+                    style={{
+                      filter: isSelected ? 'url(#rainBarGlow)' : undefined,
+                      transition: 'opacity 0.2s ease, filter 0.2s ease',
+                    }}
+                  />
+                );
+              })}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );

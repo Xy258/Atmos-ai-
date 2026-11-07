@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export interface DynamicWeatherBackdropProps {
   weatherCode: number;
@@ -347,16 +348,28 @@ export function DynamicWeatherBackdrop({
 
   return (
     <div
-      className="fixed inset-0 w-full h-full pointer-events-none overflow-hidden select-none z-0 transition-colors duration-1000"
-      style={backgroundStyle}
+      className="fixed inset-0 w-full h-full pointer-events-none overflow-hidden select-none z-0"
       aria-hidden="true"
     >
+      {/* Smooth cross-fade animation between Day / Night themes & atmospheric states */}
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={`backdrop-gradient-${category}-${isDay ? 'day' : 'night'}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 1.4, ease: [0.4, 0, 0.2, 1] }}
+          className="absolute inset-0 w-full h-full"
+          style={backgroundStyle}
+        />
+      </AnimatePresence>
+
       {/* Canvas for dynamic particles (rain, snow, motes, stars, mist) */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-[1]" />
 
       {/* Atmospheric Cloud Drifting Layers (for partly cloudy, overcast, or high cloud cover) */}
       {(category === 'partly-cloudy' || category === 'cloudy' || cloudCover > 40) && (
-        <div className="absolute inset-0 pointer-events-none opacity-40 overflow-hidden">
+        <div className="absolute inset-0 pointer-events-none opacity-40 overflow-hidden z-[2]">
           <div
             className="absolute -top-10 -left-[20%] w-[140%] h-[320px] bg-gradient-to-r from-transparent via-white/10 to-transparent blur-3xl transform animate-pulse"
             style={{ animationDuration: '8s' }}
@@ -374,7 +387,7 @@ export function DynamicWeatherBackdrop({
       )}
 
       {/* Subtle vignette for depth */}
-      <div className="absolute inset-0 bg-radial-gradient from-transparent via-transparent to-black/25 pointer-events-none" />
+      <div className="absolute inset-0 bg-radial-gradient from-transparent via-transparent to-black/25 pointer-events-none z-[3]" />
     </div>
   );
 }

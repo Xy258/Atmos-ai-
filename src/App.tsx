@@ -16,6 +16,7 @@ import { AirQualityNavButton } from '@/components/AirQualityNavButton';
 import { AqiTrendChart } from '@/components/AqiTrendChart';
 import { PollutantCard, type PollutantItem } from '@/components/PollutantCard';
 import { DynamicWeatherBackdrop } from '@/components/DynamicWeatherBackdrop';
+import { AtmosphericSoundscapeToggle } from '@/components/AtmosphericSoundscapeToggle';
 import { useGenerateWeatherInsight, useHealthCheck } from '@workspace/api-client-react';
 import {
   Activity,
@@ -1648,7 +1649,7 @@ function Home() {
     <div className="atmos-app">
       <DynamicWeatherBackdrop
         weatherCode={current?.weather_code ?? 0}
-        isDay={current ? current.is_day === 1 : true}
+        isDay={effectiveTheme === 'day'}
         windSpeed={current?.wind_speed_10m ?? 12}
         windDirection={current?.wind_direction_10m ?? 180}
         cloudCover={current?.cloud_cover ?? 20}
@@ -1704,6 +1705,12 @@ function Home() {
               )}
             </div>
             <div className="top-actions">
+              <AtmosphericSoundscapeToggle
+                weatherCode={current?.weather_code ?? 0}
+                isDay={effectiveTheme === 'day'}
+                windSpeedKmh={current?.wind_speed_10m ?? 12}
+                variant="topbar"
+              />
               <button
                 className="icon-btn theme-toggle-btn"
                 data-testid="button-toggle-theme"
@@ -2164,6 +2171,8 @@ function TodayView({
     });
   }, [activeWeatherCode, activeWindSpeed, current.wind_gusts_10m, forecast.daily, location.name, settings.simulateAlert]);
 
+  const aqiDetails = useMemo(() => getAqiDetails(air?.us_aqi ?? 0), [air?.us_aqi]);
+
   return (
     <div className="animate-rise">
       {/* Real-time Severe Weather Alert Banner */}
@@ -2257,6 +2266,12 @@ function TodayView({
                     </>
                   )}
                 </button>
+                <AtmosphericSoundscapeToggle
+                  weatherCode={activeWeatherCode}
+                  isDay={activeIsDay}
+                  windSpeedKmh={activeWindSpeed}
+                  variant="card"
+                />
                 {isViewingSelectedHour && (
                   <button
                     type="button"
@@ -2366,6 +2381,8 @@ function TodayView({
           sunset={daily.sunset[0]}
           currentTime={current.time}
           timeFormat={settings.timeFormat}
+          locationName={location.name}
+          locationKey={`${location.latitude.toFixed(3)}_${location.longitude.toFixed(3)}`}
         />
       </div>
 
@@ -2431,6 +2448,87 @@ function TodayView({
           caption="Horizon optical clarity"
         />
       </motion.div>
+
+      {/* Interactive Air Quality Overview Card */}
+      <motion.div
+        className="air-card air-card-interactive"
+        data-testid="card-air-quality"
+        onClick={onNavigateToAirQuality}
+        whileHover={{ y: -3, transition: { duration: 0.2 } }}
+        whileTap={{ scale: 0.985 }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onNavigateToAirQuality();
+          }
+        }}
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, delay: 0.15 }}
+        aria-label="View detailed air quality forecast and pollutants breakdown"
+      >
+        <div
+          className="aqi-ring"
+          style={{
+            borderColor: aqiDetails.borderColor,
+            boxShadow: `0 0 16px ${aqiDetails.bgColor}`,
+            color: aqiDetails.color,
+          }}
+        >
+          {air ? Math.round(air.us_aqi) : '--'}
+        </div>
+        <div className="aqi-copy" style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0 }}>Air Quality · {aqiDetails.level}</h3>
+            <span
+              style={{
+                fontFamily: 'var(--app-font-mono)',
+                fontSize: '10px',
+                padding: '2px 8px',
+                borderRadius: '999px',
+                background: aqiDetails.bgColor,
+                color: aqiDetails.color,
+                border: `1px solid ${aqiDetails.borderColor}`,
+                fontWeight: 600,
+              }}
+            >
+              AQI {air ? Math.round(air.us_aqi) : '--'}
+            </span>
+          </div>
+          <p style={{ margin: '4px 0 0', color: 'hsl(var(--muted-foreground))' }}>
+            {aqiDetails.summary}
+          </p>
+
+          {air && (
+            <div className="air-card-mini-pollutants">
+              <span className="air-mini-pill">PM2.5: {air.pm2_5 != null ? `${air.pm2_5.toFixed(1)} µg/m³` : '--'}</span>
+              <span className="air-mini-pill">PM10: {air.pm10 != null ? `${air.pm10.toFixed(1)} µg/m³` : '--'}</span>
+              <span className="air-mini-pill">O₃: {air.ozone != null ? `${air.ozone.toFixed(1)} µg/m³` : '--'}</span>
+              <span className="air-mini-pill">NO₂: {air.nitrogen_dioxide != null ? `${air.nitrogen_dioxide.toFixed(1)} µg/m³` : '--'}</span>
+              <span className="air-mini-pill">SO₂: {air.sulphur_dioxide != null ? `${air.sulphur_dioxide.toFixed(1)} µg/m³` : '--'}</span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="air-view-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigateToAirQuality();
+            }}
+          >
+            <span>Explore full air quality & pollutants</span>
+            <ArrowRight size={12} />
+          </button>
+        </div>
+      </motion.div>
+
+      {/* ATMOS AI Briefing Card */}
+      <div className="section-block" style={{ marginTop: '22px' }}>
+        <AtmosBriefingCard insight={insight} onGenerate={onGenerateInsight} />
+      </div>
 
       {/* Hourly Timeline */}
       <div className="section-block">
@@ -2521,108 +2619,6 @@ function TodayView({
               {selectedWindInfo.value} {selectedWindInfo.unit}
             </strong>
             <span>wind speed</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Grid: 7-day mini + AI Briefing Card + Air Quality */}
-      <div className="section-block">
-        <div className="section-heading">
-          <h2 className="section-title">Atmospheric analysis & week glance</h2>
-          <span className="section-note">Practical AI briefing and clean metrics</span>
-        </div>
-        <div className="bottom-grid">
-          <div className="forecast-card" data-testid="card-seven-day-forecast">
-            {daily.time.map((date, index) => {
-              return (
-                <motion.div
-                  className="forecast-row"
-                  key={date}
-                  whileHover={{ x: 2, transition: { duration: 0.15 } }}
-                >
-                  <div className="forecast-day">
-                    {index === 0 ? 'Today' : shortDay(date)}
-                    <span className="forecast-date">{date.slice(5).replace('-', ' / ')}</span>
-                  </div>
-                  <AnimatedWeatherIcon
-                    code={daily.weather_code[index]}
-                    isDay={true}
-                    variant="forecast"
-                    className="weather-icon"
-                  />
-                  <div className="forecast-desc">{WEATHER_TEXT[daily.weather_code[index]]}</div>
-                  <div className="temp-range">
-                    <span className="temp-high">
-                      {formatTempDisplay(daily.temperature_2m_max[index], settings.tempUnit)}
-                    </span>
-                    <span className="temp-low">
-                      {formatTempDisplay(daily.temperature_2m_min[index], settings.tempUnit)}
-                    </span>
-                  </div>
-                  <div className="forecast-rain">
-                    {daily.precipitation_probability_max[index]}%{' '}
-                    <Droplets size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-
-          <div>
-            {/* Atmos AI Briefing Card - exact match to Image 1 */}
-            <AtmosBriefingCard
-              insight={insight}
-              onGenerate={onGenerateInsight}
-            />
-
-            {/* Air Quality Card */}
-            <div
-              className="air-card air-card-interactive"
-              data-testid="card-air-quality"
-              onClick={onNavigateToAirQuality}
-              role="button"
-              tabIndex={0}
-              title={`Click to view comprehensive air quality report for ${location.name}`}
-            >
-              <div
-                className="aqi-ring"
-                style={{
-                  borderColor:
-                    (air?.us_aqi ?? 0) <= 50
-                      ? '#48bb78'
-                      : (air?.us_aqi ?? 0) <= 100
-                      ? '#ecc94b'
-                      : (air?.us_aqi ?? 0) <= 150
-                      ? '#ed8936'
-                      : '#e53e3e',
-                  boxShadow:
-                    (air?.us_aqi ?? 0) <= 50
-                      ? '0 0 12px rgba(72, 187, 120, 0.25)'
-                      : (air?.us_aqi ?? 0) <= 100
-                      ? '0 0 12px rgba(236, 201, 75, 0.25)'
-                      : '0 0 12px rgba(229, 62, 62, 0.25)',
-                }}
-              >
-                {air?.us_aqi ?? '--'}
-              </div>
-              <div className="aqi-copy" style={{ flex: 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3>Air Quality · {aqiLabel}</h3>
-                  <span className="air-view-btn">
-                    Full analysis <ArrowRight size={11} />
-                  </span>
-                </div>
-                <p>
-                  Local AQI {air?.us_aqi ?? '--'} · PM2.5 {air?.pm2_5?.toFixed(1) ?? '--'} µg/m³ · Live for {location.name}
-                </p>
-                <div className="air-card-mini-pollutants">
-                  <span className="air-mini-pill">PM2.5: {air?.pm2_5?.toFixed(1) ?? '--'}</span>
-                  <span className="air-mini-pill">PM10: {air?.pm10?.toFixed(1) ?? '--'}</span>
-                  <span className="air-mini-pill">O₃: {air?.ozone != null ? Math.round(air.ozone) : '--'}</span>
-                  <span className="air-mini-pill">NO₂: {air?.nitrogen_dioxide?.toFixed(1) ?? '--'}</span>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -3953,34 +3949,162 @@ function SettingsView({
 }
 
 // ---------------------------------------------------------------------------
-// Enhanced Dynamic & Interactive Daylight Arc Component
+// Enhanced Dynamic & Interactive Daylight Arc Component with Smooth Location Transitions
 // ---------------------------------------------------------------------------
 function DaylightArc({
   sunrise,
   sunset,
   currentTime,
   timeFormat = '12h',
+  locationName,
+  locationKey,
 }: {
   sunrise: string;
   sunset: string;
   currentTime: string;
   timeFormat?: '12h' | '24h';
+  locationName?: string;
+  locationKey?: string;
 }) {
   const sunriseMinutes = clockMinutes(sunrise);
   const sunsetMinutes = clockMinutes(sunset);
   const currentMinutes = clockMinutes(currentTime);
-
-  const [selectedMinutes, setSelectedMinutes] = useState(currentMinutes);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  useEffect(() => {
-    setSelectedMinutes(currentMinutes);
-  }, [currentMinutes, sunrise, sunset]);
-
   const dayLengthMinutes = Math.max(sunsetMinutes - sunriseMinutes, 60);
   const solarNoonMinutes = Math.round((sunriseMinutes + sunsetMinutes) / 2);
   const rangeMin = Math.max(0, sunriseMinutes - 120);
   const rangeMax = Math.min(1439, sunsetMinutes + 120);
+  const dawnMinutes = Math.max(0, sunriseMinutes - 28);
+  const duskMinutes = Math.min(1439, sunsetMinutes + 28);
+
+  const initialProg = (currentMinutes - sunriseMinutes) / dayLengthMinutes;
+  const [displayProgress, setDisplayProgress] = useState(initialProg);
+  const [displayNowProgress, setDisplayNowProgress] = useState(initialProg);
+  const [selectedMinutes, setSelectedMinutes] = useState(currentMinutes);
+  const [isSwitchingLocation, setIsSwitchingLocation] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const animRef = useRef<number | null>(null);
+  const prevLocationKeyRef = useRef<string | undefined>(locationKey);
+  const prevSolarRef = useRef<string>(`${sunrise}-${sunset}`);
+  const displayProgressRef = useRef<number>(displayProgress);
+  displayProgressRef.current = displayProgress;
+  const displayNowProgressRef = useRef<number>(displayNowProgress);
+  displayNowProgressRef.current = displayNowProgress;
+  const selectedMinutesRef = useRef<number>(selectedMinutes);
+  selectedMinutesRef.current = selectedMinutes;
+
+  // Smooth celestial transition across cities / locations or solar cycle shifts
+  useEffect(() => {
+    const isCityChanged =
+      prevLocationKeyRef.current !== undefined && prevLocationKeyRef.current !== locationKey;
+    const isSolarCycleChanged = prevSolarRef.current !== `${sunrise}-${sunset}`;
+    prevLocationKeyRef.current = locationKey;
+    prevSolarRef.current = `${sunrise}-${sunset}`;
+
+    const targetCurMin = clockMinutes(currentTime);
+    const targetSrMin = clockMinutes(sunrise);
+    const targetSsMin = clockMinutes(sunset);
+    const targetLenMin = Math.max(targetSsMin - targetSrMin, 60);
+    const targetProg = (targetCurMin - targetSrMin) / targetLenMin;
+
+    if (isCityChanged || isSolarCycleChanged) {
+      setIsSwitchingLocation(true);
+      setIsPlaying(false);
+
+      if (animRef.current) {
+        cancelAnimationFrame(animRef.current);
+      }
+
+      const startProg = displayProgressRef.current;
+      const startNowProg = displayNowProgressRef.current;
+      const startMin = selectedMinutesRef.current;
+      const duration = 850;
+      const startTime = performance.now();
+
+      const animateTransition = (now: number) => {
+        const elapsed = now - startTime;
+        const t = Math.min(1, elapsed / duration);
+        // Smooth cubic ease out
+        const ease = 1 - Math.pow(1 - t, 3);
+
+        const nextProg = startProg + (targetProg - startProg) * ease;
+        const nextNowProg = startNowProg + (targetProg - startNowProg) * ease;
+        const nextMin = Math.round(startMin + (targetCurMin - startMin) * ease);
+
+        setDisplayProgress(nextProg);
+        setDisplayNowProgress(nextNowProg);
+        setSelectedMinutes(nextMin);
+
+        if (t < 1) {
+          animRef.current = requestAnimationFrame(animateTransition);
+        } else {
+          setDisplayProgress(targetProg);
+          setDisplayNowProgress(targetProg);
+          setSelectedMinutes(targetCurMin);
+          animRef.current = null;
+          setTimeout(() => setIsSwitchingLocation(false), 220);
+        }
+      };
+
+      animRef.current = requestAnimationFrame(animateTransition);
+    } else if (!isPlaying) {
+      setSelectedMinutes(targetCurMin);
+      setDisplayProgress(targetProg);
+      setDisplayNowProgress(targetProg);
+    }
+
+    return () => {
+      if (animRef.current) {
+        cancelAnimationFrame(animRef.current);
+      }
+    };
+  }, [locationKey, sunrise, sunset, currentTime]);
+
+  // Smooth preset jumps (Dawn, Rise, Noon, Set, Dusk, Live)
+  const animateToMinutes = (targetMin: number) => {
+    setIsPlaying(false);
+    if (animRef.current) {
+      cancelAnimationFrame(animRef.current);
+    }
+
+    const targetProg = (targetMin - sunriseMinutes) / dayLengthMinutes;
+    const startProg = displayProgressRef.current;
+    const startMin = selectedMinutesRef.current;
+    const duration = 480;
+    const startTime = performance.now();
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+      const ease = 1 - Math.pow(1 - t, 3);
+
+      setDisplayProgress(startProg + (targetProg - startProg) * ease);
+      setSelectedMinutes(Math.round(startMin + (targetMin - startMin) * ease));
+
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(step);
+      } else {
+        setDisplayProgress(targetProg);
+        setSelectedMinutes(targetMin);
+        animRef.current = null;
+      }
+    };
+
+    animRef.current = requestAnimationFrame(step);
+  };
+
+  // Immediate manual scrubbing
+  const handleManualMinutes = (minutes: number) => {
+    if (animRef.current) {
+      cancelAnimationFrame(animRef.current);
+      animRef.current = null;
+    }
+    setIsPlaying(false);
+    setIsSwitchingLocation(false);
+    const clampedMin = Math.max(rangeMin, Math.min(rangeMax, minutes));
+    setSelectedMinutes(clampedMin);
+    setDisplayProgress((clampedMin - sunriseMinutes) / dayLengthMinutes);
+  };
 
   // Auto-play animation cycle across the day
   useEffect(() => {
@@ -3992,18 +4116,19 @@ function DaylightArc({
           setIsPlaying(false);
           return rangeMax;
         }
+        setDisplayProgress((next - sunriseMinutes) / dayLengthMinutes);
         return next;
       });
     }, 45);
     return () => clearInterval(interval);
-  }, [isPlaying, rangeMax]);
+  }, [isPlaying, rangeMax, sunriseMinutes, dayLengthMinutes]);
 
-  // Normalized progress values
-  const progress = (selectedMinutes - sunriseMinutes) / dayLengthMinutes;
-  const currentProgress = (currentMinutes - sunriseMinutes) / dayLengthMinutes;
+  // Normalized progress values derived from smooth displayProgress
+  const progress = displayProgress;
+  const currentProgress = displayNowProgress;
 
-  const isDaylight = selectedMinutes >= sunriseMinutes && selectedMinutes <= sunsetMinutes;
-  const isDaylightNow = currentMinutes >= sunriseMinutes && currentMinutes <= sunsetMinutes;
+  const isDaylight = progress >= 0 && progress <= 1;
+  const isDaylightNow = currentProgress >= 0 && currentProgress <= 1;
   const isViewingLive = Math.abs(selectedMinutes - currentMinutes) <= 2;
 
   // Phase computation
@@ -4050,17 +4175,17 @@ function DaylightArc({
   // Sunlight remaining / until sunrise calculation
   let remainingText = '';
   if (progress >= 0 && progress <= 1) {
-    const remainingMins = sunsetMinutes - selectedMinutes;
+    const remainingMins = Math.max(0, sunsetMinutes - selectedMinutes);
     const hrs = Math.floor(remainingMins / 60);
     const mins = remainingMins % 60;
     remainingText = `${hrs}h ${mins}m daylight left`;
   } else if (selectedMinutes < sunriseMinutes) {
-    const untilRise = sunriseMinutes - selectedMinutes;
+    const untilRise = Math.max(0, sunriseMinutes - selectedMinutes);
     const hrs = Math.floor(untilRise / 60);
     const mins = untilRise % 60;
     remainingText = `Sunrise in ${hrs}h ${mins}m`;
   } else {
-    const untilNextRise = 1440 - selectedMinutes + sunriseMinutes;
+    const untilNextRise = Math.max(0, 1440 - selectedMinutes + sunriseMinutes);
     const hrs = Math.floor(untilNextRise / 60);
     const mins = untilNextRise % 60;
     remainingText = `Next sunrise in ${hrs}h ${mins}m`;
@@ -4074,7 +4199,7 @@ function DaylightArc({
   const arcRadiusX = 140;
   const arcRadiusY = 84;
 
-  // Celestial Orb (Sun / Moon) position
+  // Celestial Orb (Sun / Moon) position calculated along continuous curve
   let sunX = centerX;
   let sunY = horizonY;
 
@@ -4102,28 +4227,185 @@ function DaylightArc({
     nowX = Math.min(346, endX + (currentProgress - 1) * 100);
   }
 
-  // Handle direct pointer interaction on the SVG arc
-  const handleSvgPointer = (e: React.PointerEvent<HTMLElement>) => {
-    if (e.buttons !== 1 && e.type !== 'pointerdown') return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const ratio = clamp(clickX / rect.width, 0, 1);
-    const targetMin = rangeMin + ratio * (rangeMax - rangeMin);
-    setSelectedMinutes(Math.round(targetMin));
-    setIsPlaying(false);
+  // Active illuminated daytime path along the elliptical arc
+  const activeProgressD =
+    progress >= 1
+      ? `M ${startX} ${horizonY} A ${arcRadiusX} ${arcRadiusY} 0 0 1 ${endX} ${horizonY}`
+      : `M ${startX} ${horizonY} A ${arcRadiusX} ${arcRadiusY} 0 0 1 ${sunX.toFixed(2)} ${sunY.toFixed(2)}`;
+
+  // Hover state for solar trajectory interaction
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoveredPoint, setHoveredPoint] = useState<{
+    x: number;
+    y: number;
+    minutes: number;
+    altitude: number;
+    isDay: boolean;
+  } | null>(null);
+  const [isOrbHovered, setIsOrbHovered] = useState(false);
+
+  // SVG coordinate transformation helper
+  const getSvgCoords = (e: React.PointerEvent<Element> | React.MouseEvent<Element>) => {
+    const svg = svgRef.current;
+    if (!svg) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ratioX = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+      const ratioY = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+      return { x: ratioX * 360, y: ratioY * 136 };
+    }
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const ctm = svg.getScreenCTM();
+    if (ctm) {
+      const transformed = pt.matrixTransform(ctm.inverse());
+      return { x: transformed.x, y: transformed.y };
+    }
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: clamp((e.clientX - rect.left) / rect.width, 0, 1) * 360,
+      y: clamp((e.clientY - rect.top) / rect.height, 0, 1) * 136,
+    };
   };
 
-  // Dawn & Dusk twilight approx
-  const dawnMinutes = Math.max(0, sunriseMinutes - 28);
-  const duskMinutes = Math.min(1439, sunsetMinutes + 28);
+  // Compute exact trajectory curve point (X, Y) and time from horizontal position
+  const computeTrajectoryPoint = useCallback((x: number) => {
+    const clampedX = clamp(x, 16, 344);
+    let ptX = centerX;
+    let ptY = horizonY;
+    let ptMin = selectedMinutes;
+    let altitude = 0;
+    let isDay = true;
+
+    if (clampedX >= startX && clampedX <= endX) {
+      const cosAngle = clamp((centerX - clampedX) / arcRadiusX, -1, 1);
+      const angle = Math.acos(cosAngle);
+      const prog = angle / Math.PI;
+      ptX = centerX - arcRadiusX * Math.cos(angle);
+      ptY = horizonY - arcRadiusY * Math.sin(angle);
+      ptMin = Math.round(sunriseMinutes + prog * (sunsetMinutes - sunriseMinutes));
+      altitude = Math.round(Math.sin(angle) * 66);
+      isDay = true;
+    } else if (clampedX < startX) {
+      const prog = (clampedX - startX) / 100;
+      ptX = Math.max(14, startX + prog * 100);
+      ptY = Math.min(130, horizonY - prog * 24);
+      ptMin = Math.round(sunriseMinutes + prog * dayLengthMinutes);
+      altitude = Math.round(Math.sin(prog * Math.PI) * 18);
+      isDay = false;
+    } else {
+      const prog = 1 + (clampedX - endX) / 100;
+      ptX = Math.min(346, endX + (prog - 1) * 100);
+      ptY = Math.min(130, horizonY + (prog - 1) * 24);
+      ptMin = Math.round(sunriseMinutes + prog * dayLengthMinutes);
+      altitude = Math.round(Math.sin(prog * Math.PI) * 18);
+      isDay = false;
+    }
+
+    return {
+      x: ptX,
+      y: ptY,
+      minutes: clamp(ptMin, rangeMin, rangeMax),
+      altitude,
+      isDay,
+    };
+  }, [arcRadiusX, arcRadiusY, centerX, dayLengthMinutes, endX, horizonY, rangeMax, rangeMin, selectedMinutes, startX, sunriseMinutes, sunsetMinutes]);
+
+  // Stage pointer event handlers
+  const handleStagePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    const coords = getSvgCoords(e);
+    const traj = computeTrajectoryPoint(coords.x);
+    const distY = Math.abs(coords.y - traj.y);
+
+    if (distY <= 48 || (coords.y <= horizonY + 16 && coords.x >= startX - 25 && coords.x <= endX + 25)) {
+      setHoveredPoint(traj);
+    } else {
+      setHoveredPoint(null);
+    }
+
+    if (e.buttons === 1) {
+      handleManualMinutes(traj.minutes);
+    }
+  };
+
+  const handleStagePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    const coords = getSvgCoords(e);
+    const traj = computeTrajectoryPoint(coords.x);
+    setHoveredPoint(traj);
+    handleManualMinutes(traj.minutes);
+  };
+
+  const handleStagePointerLeave = () => {
+    setHoveredPoint(null);
+    setIsOrbHovered(false);
+  };
+
+  // Active orb coordinates & expansion state
+  const isOrbExpanded = Boolean(hoveredPoint || isOrbHovered);
+  const activeOrbX = hoveredPoint ? hoveredPoint.x : sunX;
+  const activeOrbY = hoveredPoint ? hoveredPoint.y : sunY;
+  const activeOrbMinutes = hoveredPoint ? hoveredPoint.minutes : selectedMinutes;
+  const activeOrbAltitude = hoveredPoint ? hoveredPoint.altitude : solarAltitude;
+  const activeOrbIsDay = hoveredPoint ? hoveredPoint.isDay : isDaylight;
+
+  // Tooltip geometry and dynamic phase label
+  const tooltipWidth = 92;
+  const tooltipX = clamp(activeOrbX, 52, 308);
+  const tooltipIsBelow = activeOrbY < 40;
+  const tooltipY = tooltipIsBelow ? activeOrbY + 28 : activeOrbY - 26;
+  const arrowOffsetX = clamp(activeOrbX - tooltipX, -28, 28);
+
+  let tooltipPhaseLabel = 'Daylight';
+  if (Math.abs(activeOrbMinutes - sunriseMinutes) <= 12) {
+    tooltipPhaseLabel = 'Sunrise';
+  } else if (Math.abs(activeOrbMinutes - sunsetMinutes) <= 12) {
+    tooltipPhaseLabel = 'Sunset';
+  } else if (Math.abs(activeOrbMinutes - solarNoonMinutes) <= 20) {
+    tooltipPhaseLabel = 'Solar noon';
+  } else if (activeOrbIsDay) {
+    tooltipPhaseLabel = `${activeOrbAltitude > 0 ? `+${activeOrbAltitude}°` : `${activeOrbAltitude}°`} · Solar altitude`;
+  } else if (activeOrbMinutes < sunriseMinutes) {
+    tooltipPhaseLabel = 'Dawn twilight';
+  } else {
+    tooltipPhaseLabel = 'Dusk twilight';
+  }
 
   return (
-    <section className="metric-card daylight-card" data-testid="card-sun-position">
-      {/* Header: Title & Dynamic Status Badge with Auto-Play */}
+    <section
+      className={`metric-card daylight-card ${isSwitchingLocation ? 'is-switching' : ''}`}
+      data-testid="card-sun-position"
+    >
+      {/* Header: Title, Location Badge & Dynamic Status Badge with Auto-Play */}
       <div className="daylight-heading">
         <div>
-          <h3>Daylight arc</h3>
-          <div className="metric-sub">The shape of today</div>
+          <div className="flex items-center gap-2">
+            <h3>Daylight arc</h3>
+            {locationName && (
+              <AnimatePresence mode="wait">
+                <motion.span
+                  key={locationKey || locationName}
+                  initial={{ opacity: 0, scale: 0.9, y: -2 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.35 }}
+                  className={`daylight-city-pill ${isSwitchingLocation ? 'is-switching' : ''}`}
+                  title={`Solar cycle for ${locationName}`}
+                >
+                  {locationName}
+                </motion.span>
+              </AnimatePresence>
+            )}
+          </div>
+          <div className="metric-sub">
+            {isSwitchingLocation ? (
+              <span className="daylight-sync-cue">
+                <span className="daylight-sync-pulse" />
+                Transitioning solar trajectory...
+              </span>
+            ) : (
+              'The shape of today'
+            )}
+          </div>
         </div>
 
         <div className="daylight-header-actions">
@@ -4134,7 +4416,7 @@ function DaylightArc({
               if (isPlaying) {
                 setIsPlaying(false);
               } else {
-                if (selectedMinutes >= rangeMax - 10) setSelectedMinutes(rangeMin);
+                if (selectedMinutes >= rangeMax - 10) handleManualMinutes(rangeMin);
                 setIsPlaying(true);
               }
             }}
@@ -4154,16 +4436,18 @@ function DaylightArc({
       {/* Interactive SVG Arc Canvas Stage */}
       <div
         className="daylight-stage-wrap"
-        title="Click or drag anywhere on the sky arc to explore solar trajectory"
-        onPointerDown={handleSvgPointer}
-        onPointerMove={handleSvgPointer}
+        title="Hover anywhere along the arc trajectory to inspect time and expand the sun orb"
+        onPointerDown={handleStagePointerDown}
+        onPointerMove={handleStagePointerMove}
+        onPointerLeave={handleStagePointerLeave}
       >
         <svg
+          ref={svgRef}
           className="daylight-svg"
           viewBox="0 0 360 136"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          aria-label={`Sun trajectory at ${formatClockMinutes(selectedMinutes, timeFormat)}`}
+          aria-label={`Sun trajectory at ${formatClockMinutes(activeOrbMinutes, timeFormat)}`}
         >
           <defs>
             {/* Soft Warm Sun Arc Area Fill */}
@@ -4175,8 +4459,8 @@ function DaylightArc({
 
             {/* Glowing Sun Halo Gradient */}
             <radialGradient id="sunHaloGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.8" />
-              <stop offset="45%" stopColor="#f59e0b" stopOpacity="0.32" />
+              <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.85" />
+              <stop offset="45%" stopColor="#f59e0b" stopOpacity="0.38" />
               <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
             </radialGradient>
 
@@ -4191,6 +4475,21 @@ function DaylightArc({
             <linearGradient id="sunCoreGrad" x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor="#fef08a" />
               <stop offset="100%" stopColor="#f59e0b" />
+            </linearGradient>
+
+            {/* Active Daylight Beam Gradient */}
+            <linearGradient id="daylightActiveBeam" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.9" />
+              <stop offset="60%" stopColor="#fbbf24" stopOpacity="1" />
+              <stop offset="100%" stopColor="#fef08a" stopOpacity="1" />
+            </linearGradient>
+
+            {/* Location Switch Horizon Flare Wave Gradient */}
+            <linearGradient id="horizonSweepGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0" />
+              <stop offset="40%" stopColor="#fbbf24" stopOpacity="0.95" />
+              <stop offset="60%" stopColor="#f59e0b" stopOpacity="0.95" />
+              <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -4207,10 +4506,40 @@ function DaylightArc({
             fill="none"
           />
 
+          {/* Active Daytime Progress Arc */}
+          {progress > 0.005 && (
+            <path
+              d={activeProgressD}
+              className="arc-active-progress-line"
+              fill="none"
+              stroke="url(#daylightActiveBeam)"
+              strokeWidth="2.8"
+              strokeLinecap="round"
+            />
+          )}
+
           {/* Horizon Line with End Caps */}
           <line x1="16" y1={horizonY} x2="344" y2={horizonY} className="arc-horizon-line" />
           <circle cx={startX} cy={horizonY} r="2.5" fill="hsl(var(--muted-foreground))" opacity="0.6" />
           <circle cx={endX} cy={horizonY} r="2.5" fill="hsl(var(--muted-foreground))" opacity="0.6" />
+
+          {/* Location Transition Horizon Flare Wave */}
+          <AnimatePresence>
+            {isSwitchingLocation && (
+              <motion.line
+                x1="16"
+                y1={horizonY}
+                x2="344"
+                y2={horizonY}
+                stroke="url(#horizonSweepGrad)"
+                strokeWidth="3.2"
+                initial={{ pathLength: 0, opacity: 0.2 }}
+                animate={{ pathLength: [0, 1, 1], opacity: [0.2, 0.95, 0] }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.85, ease: 'easeInOut' }}
+              />
+            )}
+          </AnimatePresence>
 
           {/* Live "now" reference line */}
           {showNowMarker && (
@@ -4222,43 +4551,217 @@ function DaylightArc({
             </g>
           )}
 
-          {/* Dynamic Celestial Sun / Moon Orb */}
-          <g className="arc-sun-orb-group" transform={`translate(${sunX}, ${sunY})`}>
-            {isDaylight ? (
+          {/* Ghost reference anchor for currently selected time while hovering other trajectory points */}
+          {hoveredPoint && (
+            <g className="arc-ghost-anchor pointer-events-none">
+              <circle
+                cx={sunX}
+                cy={sunY}
+                r="10.5"
+                fill="none"
+                stroke="rgba(251, 191, 36, 0.45)"
+                strokeWidth="1.5"
+                strokeDasharray="2.5 2.5"
+              />
+              <circle cx={sunX} cy={sunY} r="2" fill="rgba(251, 191, 36, 0.6)" />
+            </g>
+          )}
+
+          {/* Dedicated Invisible Wide Hit Area Path for Solar Trajectory Hover */}
+          <path
+            d={`M ${startX} ${horizonY} A ${arcRadiusX} ${arcRadiusY} 0 0 1 ${endX} ${horizonY}`}
+            fill="none"
+            stroke="transparent"
+            strokeWidth="36"
+            className="arc-trajectory-hit"
+            onPointerMove={(e) => {
+              const coords = getSvgCoords(e);
+              setHoveredPoint(computeTrajectoryPoint(coords.x));
+            }}
+            onPointerLeave={() => setHoveredPoint(null)}
+          />
+
+          {/* Dynamic Celestial Sun / Moon Orb with Smooth Glide & Spring Expansion Animation */}
+          <motion.g
+            className="arc-sun-orb-group cursor-pointer"
+            animate={{
+              x: activeOrbX,
+              y: activeOrbY,
+              scale: isOrbExpanded ? 1.36 : 1,
+            }}
+            transition={{
+              x: { type: 'spring', stiffness: 360, damping: 28 },
+              y: { type: 'spring', stiffness: 360, damping: 28 },
+              scale: { type: 'spring', stiffness: 420, damping: 20 },
+            }}
+            onPointerEnter={() => setIsOrbHovered(true)}
+            onPointerLeave={() => setIsOrbHovered(false)}
+          >
+            {activeOrbIsDay ? (
               <>
-                {/* Outer pulsing solar glow */}
-                <circle cx="0" cy="0" r="22" fill="url(#sunHaloGlow)" className="arc-sun-halo" />
-                {/* Mid solar disc */}
-                <circle
+                {/* Outer pulsing solar glow that blooms when hovered */}
+                <motion.circle
                   cx="0"
                   cy="0"
-                  r="10.5"
+                  fill="url(#sunHaloGlow)"
+                  className={`arc-sun-halo ${isOrbExpanded ? 'is-hovered' : ''}`}
+                  animate={{
+                    r: isOrbExpanded ? 32 : 22,
+                    opacity: isOrbExpanded ? 0.95 : 0.65,
+                  }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                />
+                {/* Mid solar disc expanding with bright stroke */}
+                <motion.circle
+                  cx="0"
+                  cy="0"
                   fill="url(#sunCoreGrad)"
                   stroke="#ffffff"
-                  strokeWidth="2.2"
                   className="arc-sun-core"
+                  animate={{
+                    r: isOrbExpanded ? 12.5 : 10.5,
+                    strokeWidth: isOrbExpanded ? 2.8 : 2.2,
+                  }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 22 }}
                 />
                 {/* Inner glint */}
-                <circle cx="-2.5" cy="-2.5" r="2" fill="#ffffff" opacity="0.75" />
+                <circle cx="-2.5" cy="-2.5" r="2" fill="#ffffff" opacity="0.85" />
+                {/* Radiant expansion ring when hovering over trajectory */}
+                {isOrbExpanded && (
+                  <motion.circle
+                    cx="0"
+                    cy="0"
+                    r="16"
+                    fill="none"
+                    stroke="#fef08a"
+                    strokeWidth="1.2"
+                    strokeDasharray="3 3"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: [0.45, 0.9, 0.45], rotate: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                  />
+                )}
               </>
             ) : (
               <>
                 {/* Twilight / Moon glow */}
-                <circle cx="0" cy="0" r="18" fill="url(#moonHaloGlow)" className="arc-sun-halo" />
-                {/* Moon disc */}
-                <circle
+                <motion.circle
                   cx="0"
                   cy="0"
-                  r="9"
+                  fill="url(#moonHaloGlow)"
+                  className="arc-sun-halo"
+                  animate={{
+                    r: isOrbExpanded ? 26 : 18,
+                    opacity: isOrbExpanded ? 0.9 : 0.6,
+                  }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+                />
+                {/* Moon disc */}
+                <motion.circle
+                  cx="0"
+                  cy="0"
                   fill="#818cf8"
                   stroke="#ffffff"
-                  strokeWidth="1.8"
                   className="arc-sun-core"
+                  animate={{
+                    r: isOrbExpanded ? 11 : 9,
+                    strokeWidth: isOrbExpanded ? 2.4 : 1.8,
+                  }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 22 }}
                 />
-                <circle cx="-2" cy="-2" r="1.5" fill="#ffffff" opacity="0.6" />
+                <circle cx="-2" cy="-2" r="1.5" fill="#ffffff" opacity="0.7" />
               </>
             )}
-          </g>
+          </motion.g>
+
+          {/* Interactive Tooltip showing specific time and solar trajectory altitude on hover */}
+          <AnimatePresence>
+            {isOrbExpanded && (
+              <motion.g
+                key="daylight-solar-tooltip"
+                className="arc-tooltip-group pointer-events-none"
+                initial={{
+                  x: tooltipX,
+                  y: tooltipY + (tooltipIsBelow ? -8 : 8),
+                  opacity: 0,
+                  scale: 0.88,
+                }}
+                animate={{
+                  x: tooltipX,
+                  y: tooltipY,
+                  opacity: 1,
+                  scale: 1,
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: 0.88,
+                  transition: { duration: 0.15 },
+                }}
+                transition={{
+                  x: { type: 'spring', stiffness: 350, damping: 28 },
+                  y: { type: 'spring', stiffness: 350, damping: 28 },
+                  scale: { type: 'spring', stiffness: 400, damping: 24 },
+                  opacity: { duration: 0.15 },
+                }}
+              >
+                {/* Tooltip Background Pill */}
+                <rect
+                  x={-tooltipWidth / 2}
+                  y={-14}
+                  width={tooltipWidth}
+                  height="28"
+                  rx="7"
+                  fill="rgba(15, 23, 42, 0.95)"
+                  stroke="rgba(251, 191, 36, 0.65)"
+                  strokeWidth="1.2"
+                  filter="drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45))"
+                />
+                {/* Pointer arrow needle */}
+                {tooltipIsBelow ? (
+                  <polygon
+                    points={`${arrowOffsetX - 5},-14 ${arrowOffsetX},-19 ${arrowOffsetX + 5},-14`}
+                    fill="rgba(15, 23, 42, 0.95)"
+                    stroke="rgba(251, 191, 36, 0.65)"
+                    strokeWidth="1.2"
+                  />
+                ) : (
+                  <polygon
+                    points={`${arrowOffsetX - 5},14 ${arrowOffsetX},19 ${arrowOffsetX + 5},14`}
+                    fill="rgba(15, 23, 42, 0.95)"
+                    stroke="rgba(251, 191, 36, 0.65)"
+                    strokeWidth="1.2"
+                  />
+                )}
+                {/* Specific Time text */}
+                <text
+                  x="0"
+                  y="-2"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="#ffffff"
+                  fontFamily="var(--app-font-mono)"
+                  fontSize="10.5px"
+                  fontWeight="700"
+                  letterSpacing="0.02em"
+                >
+                  {formatClockMinutes(activeOrbMinutes, timeFormat)}
+                </text>
+                {/* Contextual Solar Phase / Altitude Label */}
+                <text
+                  x="0"
+                  y="8.5"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="rgba(251, 191, 36, 0.92)"
+                  fontFamily="var(--app-font-mono)"
+                  fontSize="7.5px"
+                  fontWeight="500"
+                >
+                  {tooltipPhaseLabel}
+                </text>
+              </motion.g>
+            )}
+          </AnimatePresence>
         </svg>
       </div>
 
@@ -4271,81 +4774,68 @@ function DaylightArc({
           min={rangeMin}
           max={rangeMax}
           value={selectedMinutes}
-          onChange={(event) => {
-            setSelectedMinutes(Number(event.currentTarget.value));
-            setIsPlaying(false);
-          }}
+          onChange={(event) => handleManualMinutes(Number(event.currentTarget.value))}
           aria-label="Explore daylight by time"
         />
       </div>
 
       {/* Scrub Readout Row */}
       <div className="sun-scrub-row">
-        <span>Drag to explore the day</span>
+        <span>
+          {isSwitchingLocation ? (
+            <span className="daylight-sync-cue">
+              ✦ Synced to {locationName || 'location'}
+            </span>
+          ) : (
+            'Drag to explore the day'
+          )}
+        </span>
         <strong>
           {formatClockMinutes(selectedMinutes, timeFormat)} · {phase}
         </strong>
       </div>
 
-      {/* Quick Solar Anchor Jump Presets */}
+      {/* Quick Solar Anchor Jump Presets with Smooth Transition */}
       <div className="daylight-preset-row">
         <button
           type="button"
           className={`daylight-preset-btn ${selectedMinutes === dawnMinutes ? 'active' : ''}`}
-          onClick={() => {
-            setSelectedMinutes(dawnMinutes);
-            setIsPlaying(false);
-          }}
+          onClick={() => animateToMinutes(dawnMinutes)}
         >
           Dawn
         </button>
         <button
           type="button"
           className={`daylight-preset-btn ${selectedMinutes === sunriseMinutes ? 'active' : ''}`}
-          onClick={() => {
-            setSelectedMinutes(sunriseMinutes);
-            setIsPlaying(false);
-          }}
+          onClick={() => animateToMinutes(sunriseMinutes)}
         >
           Rise
         </button>
         <button
           type="button"
           className={`daylight-preset-btn ${selectedMinutes === solarNoonMinutes ? 'active' : ''}`}
-          onClick={() => {
-            setSelectedMinutes(solarNoonMinutes);
-            setIsPlaying(false);
-          }}
+          onClick={() => animateToMinutes(solarNoonMinutes)}
         >
           Noon
         </button>
         <button
           type="button"
           className={`daylight-preset-btn ${selectedMinutes === sunsetMinutes ? 'active' : ''}`}
-          onClick={() => {
-            setSelectedMinutes(sunsetMinutes);
-            setIsPlaying(false);
-          }}
+          onClick={() => animateToMinutes(sunsetMinutes)}
         >
           Set
         </button>
         <button
           type="button"
           className={`daylight-preset-btn ${selectedMinutes === duskMinutes ? 'active' : ''}`}
-          onClick={() => {
-            setSelectedMinutes(duskMinutes);
-            setIsPlaying(false);
-          }}
+          onClick={() => animateToMinutes(duskMinutes)}
         >
           Dusk
         </button>
         <button
           type="button"
           className={`daylight-preset-btn ${isViewingLive ? 'active' : ''}`}
-          onClick={() => {
-            setSelectedMinutes(currentMinutes);
-            setIsPlaying(false);
-          }}
+          onClick={() => animateToMinutes(currentMinutes)}
           title="Snap back to current live time"
         >
           Live / Now
@@ -4367,25 +4857,36 @@ function DaylightArc({
         </div>
       </div>
 
-      {/* Sunrise & Sunset Times */}
+      {/* Sunrise & Sunset Times with AnimatePresence crossfade */}
       <div className="sun-times">
-        <div className="sun-time-block">
-          <div className="sun-time-label">
-            <Sunrise size={15} color="#f59e0b" />
-            <span>Rise</span>
-          </div>
-          <strong>{formatTime(sunrise, undefined, timeFormat)}</strong>
-          <span className="sun-time-sub">Dawn {formatClockMinutes(dawnMinutes, timeFormat)}</span>
-        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={locationKey || `${sunrise}-${sunset}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+            className="sun-times-inner"
+          >
+            <div className="sun-time-block">
+              <div className="sun-time-label">
+                <Sunrise size={15} color="#f59e0b" />
+                <span>Rise</span>
+              </div>
+              <strong>{formatTime(sunrise, undefined, timeFormat)}</strong>
+              <span className="sun-time-sub">Dawn {formatClockMinutes(dawnMinutes, timeFormat)}</span>
+            </div>
 
-        <div className="sun-time-block right">
-          <div className="sun-time-label">
-            <span>Set</span>
-            <Sunset size={15} color="#ef4444" />
-          </div>
-          <strong>{formatTime(sunset, undefined, timeFormat)}</strong>
-          <span className="sun-time-sub">Dusk {formatClockMinutes(duskMinutes, timeFormat)}</span>
-        </div>
+            <div className="sun-time-block right">
+              <div className="sun-time-label">
+                <span>Set</span>
+                <Sunset size={15} color="#ef4444" />
+              </div>
+              <strong>{formatTime(sunset, undefined, timeFormat)}</strong>
+              <span className="sun-time-sub">Dusk {formatClockMinutes(duskMinutes, timeFormat)}</span>
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
     </section>
   );
@@ -4405,7 +4906,7 @@ const dataGridContainerVariants: any = {
 const dataCardItemVariants: any = {
   hidden: {
     opacity: 0,
-    y: 18,
+    y: 16,
     scale: 0.96,
   },
   visible: {
@@ -4413,8 +4914,10 @@ const dataCardItemVariants: any = {
     y: 0,
     scale: 1,
     transition: {
-      duration: 0.45,
-      ease: [0.22, 1, 0.36, 1],
+      type: 'spring',
+      stiffness: 260,
+      damping: 22,
+      mass: 0.7,
     },
   },
 };
@@ -4444,7 +4947,21 @@ function DataCard({
       className={`data-card ${children ? 'has-custom-content' : ''}`}
       data-testid={`card-${label.toLowerCase().replace(/\s+/g, '-')}`}
       variants={variants}
-      whileHover={{ y: -3, transition: { duration: 0.18 } }}
+      whileHover={{
+        scale: 1.025,
+        y: -4,
+        transition: {
+          type: 'spring',
+          stiffness: 400,
+          damping: 24,
+          mass: 0.5,
+        },
+      }}
+      whileTap={{
+        scale: 0.985,
+        y: -1,
+        transition: { duration: 0.12 },
+      }}
     >
       <div className="data-head">
         <span>{label}</span>
