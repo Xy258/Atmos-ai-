@@ -1,12 +1,17 @@
-const CACHE_NAME = 'atmos-v1';
+const CACHE_NAME = 'atmos-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
+  '/manifest.json',
+  '/favicon.svg',
   '/icon.svg',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
+  '/pwa-maskable-192x192.png',
+  '/pwa-maskable-512x512.png',
   '/apple-touch-icon.png',
+  '/favicon-32x32.png',
 ];
 
 self.addEventListener('install', (event) => {

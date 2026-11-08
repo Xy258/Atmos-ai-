@@ -81,7 +81,7 @@ export function AtmosphericStateWeatherAnimation({
     let width = (canvas.width = parent?.clientWidth || 400);
     let height = (canvas.height = parent?.clientHeight || 320);
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
@@ -103,16 +103,16 @@ export function AtmosphericStateWeatherAnimation({
     const particles: Particle[] = [];
     const count =
       animType === 'rain'
-        ? 65
+        ? 22
         : animType === 'thunderstorm'
-        ? 95
+        ? 30
         : animType === 'snow'
-        ? 55
+        ? 18
         : animType === 'sunny'
-        ? 24
+        ? 8
         : animType === 'clear-night'
-        ? 45
-        : 18;
+        ? 14
+        : 6;
 
     for (let i = 0; i < count; i++) {
       if (animType === 'rain' || animType === 'thunderstorm') {
@@ -258,11 +258,24 @@ export function AtmosphericStateWeatherAnimation({
       animId = requestAnimationFrame(render);
     };
 
+    let isPaused = false;
+    const handleVisibility = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(animId);
+        isPaused = true;
+      } else if (isPaused) {
+        isPaused = false;
+        animId = requestAnimationFrame(render);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     animId = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [animType, windSpeed, windDirection]);
 

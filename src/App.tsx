@@ -4443,9 +4443,12 @@ function DaylightArc({
     const distY = Math.abs(coords.y - traj.y);
 
     if (distY <= 48 || (coords.y <= horizonY + 16 && coords.x >= startX - 25 && coords.x <= endX + 25)) {
-      setHoveredPoint(traj);
+      setHoveredPoint((prev) => {
+        if (prev && prev.minutes === traj.minutes && prev.isDay === traj.isDay) return prev;
+        return traj;
+      });
     } else {
-      setHoveredPoint(null);
+      setHoveredPoint((prev) => (prev ? null : null));
     }
 
     if (e.buttons === 1) {

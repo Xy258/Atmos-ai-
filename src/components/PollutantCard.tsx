@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import {
   Factory,
   HeartPulse,
@@ -35,15 +36,26 @@ interface PollutantCardProps {
 }
 
 export function PollutantCard({ item }: PollutantCardProps) {
+  const isElevated =
+    item.status.toLowerCase().includes('elevated') ||
+    item.status.toLowerCase().includes('unhealthy') ||
+    item.status.toLowerCase().includes('high') ||
+    item.status.toLowerCase().includes('danger') ||
+    (item.safeMax > 0 && item.raw > item.safeMax);
+
   return (
     <Tooltip delayDuration={150}>
       <TooltipTrigger asChild>
-        <div
-          className="pollutant-card group cursor-pointer transition-all duration-200 hover:ring-2 hover:ring-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        <motion.div
+          className={`pollutant-card group cursor-pointer transition-all duration-200 hover:ring-2 hover:ring-primary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            isElevated ? 'border-rose-500/30' : ''
+          }`}
           tabIndex={0}
           data-testid={`card-pollutant-${item.id}`}
           role="button"
           aria-label={`Inspect ${item.name} sources and health risks`}
+          whileHover={{ y: -2 }}
+          transition={{ duration: 0.2 }}
         >
           <div>
             <div className="pollutant-header flex items-center justify-between gap-2">
@@ -58,13 +70,28 @@ export function PollutantCard({ item }: PollutantCardProps) {
 
               <div className="flex items-center gap-1.5 shrink-0">
                 <span
-                  className="pollutant-badge text-xs font-semibold px-2 py-0.5 rounded-full"
+                  className="pollutant-badge text-xs font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1.5"
                   style={{
                     color: item.statusColor,
                     backgroundColor: `${item.statusColor}1f`,
                     border: `1px solid ${item.statusColor}40`,
                   }}
                 >
+                  {isElevated && (
+                    <motion.span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ backgroundColor: item.statusColor }}
+                      animate={{
+                        opacity: [0.35, 1, 0.35],
+                        scale: [0.8, 1.3, 0.8],
+                      }}
+                      transition={{
+                        duration: 2.2,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                      }}
+                    />
+                  )}
                   {item.status}
                 </span>
 
@@ -89,12 +116,49 @@ export function PollutantCard({ item }: PollutantCardProps) {
               </span>
             </div>
 
-            <div className="pollutant-progress-track mt-2.5 h-1.5 rounded-full bg-muted overflow-hidden">
-              <div
-                className="pollutant-progress-fill h-full rounded-full transition-all duration-500"
+            <div className="pollutant-progress-track mt-2.5 h-1.5 rounded-full bg-muted overflow-hidden relative">
+              {isElevated && (
+                <motion.div
+                  className="absolute inset-y-0 left-0 rounded-full pointer-events-none blur-[2px]"
+                  style={{
+                    width: `${item.progress}%`,
+                    backgroundColor: item.statusColor,
+                  }}
+                  animate={{
+                    opacity: [0.3, 0.8, 0.3],
+                  }}
+                  transition={{
+                    duration: 2.2,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                  }}
+                />
+              )}
+              <motion.div
+                className="pollutant-progress-fill relative h-full rounded-full"
                 style={{
-                  width: `${item.progress}%`,
                   backgroundColor: item.statusColor,
+                }}
+                initial={{ width: 0 }}
+                animate={{
+                  width: `${item.progress}%`,
+                  opacity: isElevated ? [0.8, 1, 0.8] : 1,
+                  boxShadow: isElevated
+                    ? [
+                        `0 0 2px ${item.statusColor}40`,
+                        `0 0 10px ${item.statusColor}cc, 0 0 3px ${item.statusColor}`,
+                        `0 0 2px ${item.statusColor}40`,
+                      ]
+                    : 'none',
+                }}
+                transition={{
+                  width: { duration: 0.7, ease: 'easeOut' },
+                  opacity: isElevated
+                    ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' }
+                    : { duration: 0.3 },
+                  boxShadow: isElevated
+                    ? { duration: 2.2, repeat: Infinity, ease: 'easeInOut' }
+                    : { duration: 0.3 },
                 }}
               />
             </div>
@@ -109,7 +173,7 @@ export function PollutantCard({ item }: PollutantCardProps) {
               <span aria-hidden="true">→</span>
             </span>
           </div>
-        </div>
+        </motion.div>
       </TooltipTrigger>
 
       <TooltipContent

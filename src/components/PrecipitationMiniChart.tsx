@@ -1,4 +1,5 @@
 import React from 'react';
+import { CloudRain } from 'lucide-react';
 
 export interface PrecipitationMiniChartProps {
   hourlyProbability: number[];
@@ -57,33 +58,33 @@ export function PrecipitationMiniChart({
   };
 
   return (
-    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none min-w-0 max-w-full overflow-hidden">
-      <div className="flex items-center justify-between text-[10.5px] font-mono text-muted-foreground mb-1.5 min-w-0">
-        <span className="flex items-center gap-1 min-w-0 truncate">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block animate-pulse shrink-0" />
-          <span className="truncate">Next 6h chance</span>
+    <div className="w-full mt-3 pt-2 border-t border-slate-900/10 dark:border-white/10 flex flex-col justify-between flex-1 select-none min-w-0 max-w-full overflow-hidden">
+      <div className="flex items-center justify-between flex-wrap gap-x-1.5 gap-y-0.5 text-[clamp(9px,2.2vw,10.5px)] font-mono text-muted-foreground mb-1.5 min-w-0">
+        <span className="flex items-center gap-1 min-w-0">
+          <CloudRain className="w-[clamp(11px,2.4vw,13px)] h-[clamp(11px,2.4vw,13px)] text-cyan-500 dark:text-cyan-400 shrink-0" />
+          <span className="whitespace-nowrap font-medium">Next 6h chance</span>
         </span>
-        <span className="font-semibold text-foreground shrink-0 ml-1">
+        <span className="font-semibold text-foreground shrink-0 ml-auto">
           {maxProb > 0 ? `Peak ${maxProb}%` : 'Dry forecast'}
         </span>
       </div>
 
       {/* Mini probability bars */}
-      <div className="grid grid-cols-6 gap-1 items-end h-[52px] pt-1 w-full min-w-0">
+      <div className="grid grid-cols-6 gap-0.5 sm:gap-1 items-end h-[50px] sm:h-[54px] pt-1 w-full min-w-0">
         {upcomingHours.map((item, idx) => {
           const heightPercent = Math.max(12, Math.min(100, item.prob));
           return (
-            <div key={idx} className="flex flex-col items-center gap-1 h-full justify-end min-w-0 w-full overflow-hidden">
-              <span className="text-[8.5px] font-mono font-medium text-slate-300 truncate w-full text-center">
+            <div key={idx} className="flex flex-col items-center gap-0.5 sm:gap-1 h-full justify-end min-w-0 w-full overflow-hidden">
+              <span className="text-[clamp(7.5px,1.9vw,8.5px)] font-mono font-semibold text-slate-700 dark:text-slate-200 w-full text-center leading-none">
                 {item.prob > 0 ? `${item.prob}%` : '0%'}
               </span>
-              <div className="w-full bg-white/5 rounded-t-sm overflow-hidden h-[32px] flex items-end">
+              <div className="w-full bg-slate-200/70 dark:bg-white/10 rounded-t-sm overflow-hidden h-[30px] sm:h-[34px] flex items-end">
                 <div
                   className={`w-full rounded-t-sm bg-gradient-to-t ${getProbColor(item.prob)} transition-all duration-300`}
                   style={{ height: `${heightPercent}%` }}
                 />
               </div>
-              <span className="text-[8px] font-mono text-muted-foreground truncate w-full text-center">
+              <span className="text-[clamp(7px,1.8vw,8px)] font-mono font-medium text-slate-600 dark:text-slate-400 w-full text-center leading-none">
                 {item.hour}
               </span>
             </div>
@@ -92,9 +93,9 @@ export function PrecipitationMiniChart({
       </div>
 
       {/* Bottom Summary Pill */}
-      <div className="mt-2 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-muted-foreground min-w-0">
-        <span className="truncate">Accumulation</span>
-        <span className="text-foreground font-medium truncate ml-1 shrink-0">
+      <div className="mt-2 pt-1.5 border-t border-slate-900/10 dark:border-white/10 flex items-center justify-between flex-wrap gap-x-1.5 gap-y-0.5 text-[clamp(8.5px,2vw,10px)] font-mono text-muted-foreground min-w-0">
+        <span className="shrink-0 font-medium">Accumulation</span>
+        <span className="text-foreground font-semibold text-right ml-auto leading-tight">
           {currentPrecipitationMm > 0
             ? `${currentPrecipitationMm} ${precipUnit} active`
             : 'No rain expected'}

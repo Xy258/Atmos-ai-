@@ -16,8 +16,8 @@ createRoot(document.getElementById('root')!, {
   </ErrorBoundary>,
 );
 
-// Register Service Worker for PWA & Android standalone capability
-if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+// Register Service Worker for PWA & mobile standalone capability
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js')
