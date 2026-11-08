@@ -16,7 +16,10 @@ import { AirQualityNavButton } from '@/components/AirQualityNavButton';
 import { AqiTrendChart } from '@/components/AqiTrendChart';
 import { PollutantCard, type PollutantItem } from '@/components/PollutantCard';
 import { DynamicWeatherBackdrop } from '@/components/DynamicWeatherBackdrop';
-import { AtmosphericSoundscapeToggle } from '@/components/AtmosphericSoundscapeToggle';
+import {
+  AtmosphericAudioSimpleToggle,
+  AtmosphericSoundscapeSettings,
+} from '@/components/AtmosphericSoundscapeToggle';
 import { AtmosphericStateWeatherAnimation } from '@/components/AtmosphericStateWeatherAnimation';
 import { PrecipitationMiniChart } from '@/components/PrecipitationMiniChart';
 import { VisibilityClarityMini } from '@/components/VisibilityClarityMini';
@@ -1720,12 +1723,6 @@ function Home() {
               )}
             </div>
             <div className="top-actions">
-              <AtmosphericSoundscapeToggle
-                weatherCode={current?.weather_code ?? 0}
-                isDay={effectiveTheme === 'day'}
-                windSpeedKmh={current?.wind_speed_10m ?? 12}
-                variant="topbar"
-              />
               <button
                 className="icon-btn theme-toggle-btn"
                 data-testid="button-toggle-theme"
@@ -1765,7 +1762,11 @@ function Home() {
                 <LocateFixed size={15} />
                 <span>Use my location</span>
               </button>
-              <AndroidInstallButton iconOnly />
+              <AtmosphericAudioSimpleToggle
+                weatherCode={current?.weather_code ?? 0}
+                isDay={effectiveTheme === 'day'}
+                windSpeedKmh={current?.wind_speed_10m ?? 12}
+              />
             </div>
           </header>
 
@@ -1882,6 +1883,7 @@ function Home() {
                     onGenerateInsight={generateInsight}
                     onNavigateToAirQuality={() => setActiveTab('Air Quality')}
                     settings={settings}
+                    onUpdateSettings={setSettings}
                     location={location}
                     onCycleTheme={cycleTheme}
                   />
@@ -1918,6 +1920,8 @@ function Home() {
                     setSettings={setSettings}
                     effectiveTheme={effectiveTheme}
                     locationName={location.name}
+                    weatherCode={current?.weather_code ?? 0}
+                    windSpeedKmh={current?.wind_speed_10m ?? 12}
                     onReset={() => {
                       setSettings(DEFAULT_SETTINGS);
                       setSavedList(DEFAULT_LOCATIONS);
@@ -2115,6 +2119,7 @@ function TodayView({
   onGenerateInsight,
   onNavigateToAirQuality,
   settings,
+  onUpdateSettings,
   location,
   onCycleTheme,
 }: {
@@ -2129,6 +2134,7 @@ function TodayView({
   onGenerateInsight: () => void;
   onNavigateToAirQuality: () => void;
   settings: AppSettings;
+  onUpdateSettings?: React.Dispatch<React.SetStateAction<AppSettings>>;
   location: Location;
   onCycleTheme?: () => void;
 }) {
@@ -2545,85 +2551,14 @@ function TodayView({
         </DataCard>
       </motion.div>
 
-      {/* Interactive Air Quality Overview Card */}
-      <motion.div
-        className="air-card air-card-interactive"
-        data-testid="card-air-quality"
-        onClick={onNavigateToAirQuality}
-        whileHover={{ y: -3, transition: { duration: 0.2 } }}
-        whileTap={{ scale: 0.985 }}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onNavigateToAirQuality();
-          }
-        }}
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.15 }}
-        aria-label="View detailed air quality forecast and pollutants breakdown"
-      >
-        <div
-          className="aqi-ring"
-          style={{
-            borderColor: aqiDetails.borderColor,
-            boxShadow: `0 0 16px ${aqiDetails.bgColor}`,
-            color: aqiDetails.color,
-          }}
-        >
-          {air ? Math.round(air.us_aqi) : '--'}
-        </div>
-        <div className="aqi-copy" style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <h3 style={{ margin: 0 }}>Air Quality · {aqiDetails.level}</h3>
-            <span
-              style={{
-                fontFamily: 'var(--app-font-mono)',
-                fontSize: '10px',
-                padding: '2px 8px',
-                borderRadius: '999px',
-                background: aqiDetails.bgColor,
-                color: aqiDetails.color,
-                border: `1px solid ${aqiDetails.borderColor}`,
-                fontWeight: 600,
-              }}
-            >
-              AQI {air ? Math.round(air.us_aqi) : '--'}
-            </span>
-          </div>
-          <p style={{ margin: '4px 0 0', color: 'hsl(var(--muted-foreground))' }}>
-            {aqiDetails.summary}
-          </p>
-
-          {air && (
-            <div className="air-card-mini-pollutants">
-              <span className="air-mini-pill">PM2.5: {air.pm2_5 != null ? `${air.pm2_5.toFixed(1)} µg/m³` : '--'}</span>
-              <span className="air-mini-pill">PM10: {air.pm10 != null ? `${air.pm10.toFixed(1)} µg/m³` : '--'}</span>
-              <span className="air-mini-pill">O₃: {air.ozone != null ? `${air.ozone.toFixed(1)} µg/m³` : '--'}</span>
-              <span className="air-mini-pill">NO₂: {air.nitrogen_dioxide != null ? `${air.nitrogen_dioxide.toFixed(1)} µg/m³` : '--'}</span>
-              <span className="air-mini-pill">SO₂: {air.sulphur_dioxide != null ? `${air.sulphur_dioxide.toFixed(1)} µg/m³` : '--'}</span>
-            </div>
-          )}
-
-          <button
-            type="button"
-            className="air-view-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              onNavigateToAirQuality();
-            }}
-          >
-            <span>Explore full air quality & pollutants</span>
-            <ArrowRight size={12} />
-          </button>
-        </div>
-      </motion.div>
-
       {/* ATMOS AI Briefing Card */}
       <div className="section-block" style={{ marginTop: '22px' }}>
-        <AtmosBriefingCard insight={insight} onGenerate={onGenerateInsight} />
+        <AtmosBriefingCard
+          insight={insight}
+          onGenerate={onGenerateInsight}
+          briefingTone={settings.briefingTone}
+          onToneChange={(tone) => onUpdateSettings?.((s) => ({ ...s, briefingTone: tone }))}
+        />
       </div>
 
       {/* Hourly Timeline */}
@@ -2674,24 +2609,8 @@ function TodayView({
           })}
         </div>
 
-        {/* Recharts 12-Hour Temperature Trend Line Chart */}
-        <HourlyTemperatureChart
-          times={forecast.hourly.time}
-          temperatures={forecast.hourly.temperature_2m}
-          apparentTemps={forecast.hourly.apparent_temperature}
-          precipProbabilities={forecast.hourly.precipitation_probability}
-          weatherCodes={forecast.hourly.weather_code}
-          hourlyStart={hourlyStart}
-          sunrise={daily.sunrise[0]}
-          sunset={daily.sunset[0]}
-          timezone={forecast.timezone}
-          tempUnit={settings.tempUnit}
-          timeFormat={settings.timeFormat}
-          selectedHour={selectedHour}
-          onSelectHour={setSelectedHour}
-        />
-
-        <div className="hourly-focus" data-testid="card-selected-hour">
+        {/* Selected time slot: Current conditions - directly after Next 12 hours */}
+        <div className="hourly-focus" data-testid="card-selected-hour" style={{ marginTop: '14px' }}>
           <div>
             <span>Selected time slot</span>
             <strong>
@@ -2717,94 +2636,210 @@ function TodayView({
             <span>wind speed</span>
           </div>
         </div>
+
+        {/* Recharts 12-Hour Temperature Trend Line Chart */}
+        <HourlyTemperatureChart
+          times={forecast.hourly.time}
+          temperatures={forecast.hourly.temperature_2m}
+          apparentTemps={forecast.hourly.apparent_temperature}
+          precipProbabilities={forecast.hourly.precipitation_probability}
+          weatherCodes={forecast.hourly.weather_code}
+          hourlyStart={hourlyStart}
+          sunrise={daily.sunrise[0]}
+          sunset={daily.sunset[0]}
+          timezone={forecast.timezone}
+          tempUnit={settings.tempUnit}
+          timeFormat={settings.timeFormat}
+          selectedHour={selectedHour}
+          onSelectHour={setSelectedHour}
+        />
+      </div>
+
+      {/* Interactive Air Quality Overview Card - Placed last in Today */}
+      <div className="section-block" style={{ marginTop: '24px' }}>
+        <motion.div
+          className="air-card air-card-interactive"
+          data-testid="card-air-quality"
+          onClick={onNavigateToAirQuality}
+          whileHover={{ y: -3, transition: { duration: 0.2 } }}
+          whileTap={{ scale: 0.985 }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onNavigateToAirQuality();
+            }
+          }}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.15 }}
+          aria-label="View detailed air quality forecast and pollutants breakdown"
+        >
+          <div
+            className="aqi-ring"
+            style={{
+              borderColor: aqiDetails.borderColor,
+              boxShadow: `0 0 16px ${aqiDetails.bgColor}`,
+              color: aqiDetails.color,
+            }}
+          >
+            {air ? Math.round(air.us_aqi) : '--'}
+          </div>
+          <div className="aqi-copy" style={{ flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <h3 style={{ margin: 0 }}>Air Quality · {aqiDetails.level}</h3>
+              <span
+                style={{
+                  fontFamily: 'var(--app-font-mono)',
+                  fontSize: '10px',
+                  padding: '2px 8px',
+                  borderRadius: '999px',
+                  background: aqiDetails.bgColor,
+                  color: aqiDetails.color,
+                  border: `1px solid ${aqiDetails.borderColor}`,
+                  fontWeight: 600,
+                }}
+              >
+                AQI {air ? Math.round(air.us_aqi) : '--'}
+              </span>
+            </div>
+            <p style={{ margin: '4px 0 0', color: 'hsl(var(--muted-foreground))' }}>
+              {aqiDetails.summary}
+            </p>
+
+            {air && (
+              <div className="air-card-mini-pollutants">
+                <span className="air-mini-pill">PM2.5: {air.pm2_5 != null ? `${air.pm2_5.toFixed(1)} µg/m³` : '--'}</span>
+                <span className="air-mini-pill">PM10: {air.pm10 != null ? `${air.pm10.toFixed(1)} µg/m³` : '--'}</span>
+                <span className="air-mini-pill">O₃: {air.ozone != null ? `${air.ozone.toFixed(1)} µg/m³` : '--'}</span>
+                <span className="air-mini-pill">NO₂: {air.nitrogen_dioxide != null ? `${air.nitrogen_dioxide.toFixed(1)} µg/m³` : '--'}</span>
+                <span className="air-mini-pill">SO₂: {air.sulphur_dioxide != null ? `${air.sulphur_dioxide.toFixed(1)} µg/m³` : '--'}</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="air-view-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigateToAirQuality();
+              }}
+            >
+              <span>Explore full air quality & pollutants</span>
+              <ArrowRight size={12} />
+            </button>
+          </div>
+        </motion.div>
       </div>
     </div>
   );
 }
 
+const BRIEFING_FOCUS_OPTIONS = [
+  {
+    id: 'general' as const,
+    label: 'Balanced',
+    fullTitle: 'Balanced & Practical',
+    desc: 'Everyday life advice: commute, comfort, clothing & UV protection',
+    icon: Sparkles,
+  },
+  {
+    id: 'commute' as const,
+    label: 'Commuter',
+    fullTitle: 'Transit & Commuter',
+    desc: 'Precipitation timing, road delays, wind gusts & travel visibility',
+    icon: Compass,
+  },
+  {
+    id: 'outdoor' as const,
+    label: 'Runner',
+    fullTitle: 'Athletics & Runner',
+    desc: 'Air quality, workout windows, humidity & thermal strain',
+    icon: Activity,
+  },
+  {
+    id: 'detailed' as const,
+    label: 'Deep Dive',
+    fullTitle: 'Meteorological Deep Dive',
+    desc: 'Technical analysis: barometric pressure, dew points & frontal passages',
+    icon: Gauge,
+  },
+];
+
 // ---------------------------------------------------------------------------
-// Atmos AI Briefing Card (Image 1 replica & functional generator)
+// Atmos AI Briefing Card (with in-card Focus selector)
 // ---------------------------------------------------------------------------
 function AtmosBriefingCard({
   insight,
   onGenerate,
+  briefingTone = 'general',
+  onToneChange,
 }: {
   insight: ReturnType<typeof useGenerateWeatherInsight>;
   onGenerate: () => void;
+  briefingTone?: AppSettings['briefingTone'];
+  onToneChange?: (tone: AppSettings['briefingTone']) => void;
 }) {
   const data = insight.data;
-  const [speaking, setSpeaking] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [focusMenuOpen, setFocusMenuOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const activeData = data || {
-    headline: 'Current Weather Briefing',
-    summary: 'Live atmospheric conditions are active and operating normally. Reviewing current temperature, humidity, wind, and air quality.',
-    recommendations: [
-      'Stay hydrated and monitor local weather updates.',
-      'Check air quality index before outdoor activities.',
-    ],
-  };
-
-  const handleCopy = () => {
-    const text = `${activeData.headline}\n\n${activeData.summary}\n\nRecommendations:\n${activeData.recommendations
-      .map((r) => `• ${r}`)
-      .join('\n')}`;
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }).catch(() => {
-        fallbackCopy(text);
-      });
-    } else {
-      fallbackCopy(text);
-    }
-  };
-
-  const fallbackCopy = (text: string) => {
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.top = '0';
-      textarea.style.left = '0';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const success = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      if (success) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setFocusMenuOpen(false);
       }
-    } catch {
-      // ignore
     }
+    if (focusMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [focusMenuOpen]);
+
+  const currentOption = BRIEFING_FOCUS_OPTIONS.find((o) => o.id === briefingTone) || BRIEFING_FOCUS_OPTIONS[0];
+  const CurrentIcon = currentOption.icon;
+
+  const toneData: Record<AppSettings['briefingTone'], { headline: string; summary: string; recommendations: string[] }> = {
+    general: {
+      headline: 'Balanced Daily Outlook',
+      summary: 'Equilibrium atmospheric conditions. Recommended for general day-to-day planning, clothing choices, and outdoor comfort.',
+      recommendations: [
+        'Layer comfortably for shifting diurnal temperatures.',
+        'Stay hydrated and track midday UV exposure.',
+        'Keep light weather protection handy for unexpected shifts.',
+      ],
+    },
+    commute: {
+      headline: 'Transit & Commuter Advisory',
+      summary: 'Priority focus on road conditions, transit sightlines, precipitation windows, and commuter wind exposure.',
+      recommendations: [
+        'Check route radar before peak morning and evening travel windows.',
+        'Expect moderate wind gusts on elevated bridges and highway corridors.',
+        'Allow 5-10 min buffer if precipitation probability increases.',
+      ],
+    },
+    outdoor: {
+      headline: 'Runner & Athletics Index',
+      summary: 'Optimized analysis for cardio training, running, cycling, outdoor endurance, and thermal strain.',
+      recommendations: [
+        'Optimal outdoor workout window is morning or late afternoon.',
+        'Hydration baseline: drink 500ml water per 45 min of high exertion.',
+        'Air quality and particulate density are favorable for deep breathing.',
+      ],
+    },
+    detailed: {
+      headline: 'Meteorological Technical Briefing',
+      summary: 'Deep synoptic synthesis covering barometric pressure tendencies, moisture convergence, and boundary-layer dynamics.',
+      recommendations: [
+        'Barometer remains steady near standard sea-level equilibrium.',
+        'Dew point spread indicates low surface condensation risk.',
+        'Boundary layer winds show laminar flow with gentle shear.',
+      ],
+    },
   };
 
-  const handleSpeak = () => {
-    if (!('speechSynthesis' in window)) return;
-    try {
-      if (speaking) {
-        window.speechSynthesis.cancel();
-        setSpeaking(false);
-        return;
-      }
-      window.speechSynthesis.cancel();
-      const text = `${activeData.headline}. ${activeData.summary}. ${activeData.recommendations.join('. ')}`;
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.onend = () => setSpeaking(false);
-      utterance.onerror = () => setSpeaking(false);
-      setSpeaking(true);
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      setSpeaking(false);
-    }
-  };
+  const activeData = data || toneData[briefingTone] || toneData.general;
 
   return (
     <section className="insight-card" data-testid="card-ai-briefing">
@@ -2813,23 +2848,60 @@ function AtmosBriefingCard({
           <Activity size={14} className="briefing-pulse-icon" />
           ATMOS BRIEFING
         </div>
-        <div className="briefing-actions-top">
+        <div className="briefing-focus-wrap" ref={dropdownRef}>
           <button
-            className="briefing-icon-btn"
-            onClick={handleSpeak}
-            title={speaking ? 'Stop speech' : 'Read briefing aloud'}
-            aria-label="Read briefing aloud"
+            type="button"
+            className="briefing-focus-btn"
+            onClick={() => setFocusMenuOpen((prev) => !prev)}
+            aria-haspopup="true"
+            aria-expanded={focusMenuOpen}
+            title="Choose Atmos AI Briefing Focus"
           >
-            {speaking ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            <CurrentIcon size={12} className="text-amber-400 shrink-0" />
+            <span className="briefing-focus-label">
+              <span className="opacity-70 font-normal">Focus:</span> {currentOption.label}
+            </span>
+            <ChevronDown
+              size={12}
+              className={`transition-transform duration-200 opacity-70 ${focusMenuOpen ? 'rotate-180' : ''}`}
+            />
           </button>
-          <button
-            className="briefing-icon-btn"
-            onClick={handleCopy}
-            title={copied ? 'Copied!' : 'Copy briefing text'}
-            aria-label="Copy briefing text"
-          >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-          </button>
+
+          {focusMenuOpen && (
+            <div className="briefing-focus-dropdown" role="menu">
+              <div className="briefing-focus-dropdown-header">
+                Atmos AI Briefing Focus
+              </div>
+              {BRIEFING_FOCUS_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const isSelected = briefingTone === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`briefing-focus-dropdown-item ${isSelected ? 'active' : ''}`}
+                    onClick={() => {
+                      onToneChange?.(opt.id);
+                      setFocusMenuOpen(false);
+                      onGenerate();
+                    }}
+                    role="menuitem"
+                  >
+                    <div className="briefing-focus-item-icon">
+                      <Icon size={13} />
+                    </div>
+                    <div className="briefing-focus-item-content">
+                      <div className="briefing-focus-item-title">
+                        <span>{opt.fullTitle}</span>
+                        {isSelected && <Check size={13} className="text-amber-400 shrink-0" />}
+                      </div>
+                      <div className="briefing-focus-item-desc">{opt.desc}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -3734,12 +3806,16 @@ function SettingsView({
   onReset,
   effectiveTheme = 'day',
   locationName,
+  weatherCode = 0,
+  windSpeedKmh = 12,
 }: {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   onReset: () => void;
   effectiveTheme?: 'day' | 'night';
   locationName?: string;
+  weatherCode?: number;
+  windSpeedKmh?: number;
 }) {
   return (
     <div className="settings-view-container animate-rise">
@@ -3836,60 +3912,6 @@ function SettingsView({
               </button>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* AI Briefing Persona */}
-      <section className="settings-section-card" data-testid="card-settings-persona">
-        <div className="settings-section-header">
-          <div className="settings-section-icon">
-            <Sparkles size={18} />
-          </div>
-          <div>
-            <h3 className="settings-section-title">Atmos AI Briefing Focus</h3>
-            <div className="settings-section-desc">Choose how the AI assistant tailors advice for your day</div>
-          </div>
-        </div>
-
-        <div className="persona-grid">
-          {(
-            [
-              {
-                id: 'general',
-                title: 'Balanced & Practical',
-                desc: 'Everyday life advice covering commute, comfort, clothing, and UV protection.',
-              },
-              {
-                id: 'commute',
-                title: 'Transit & Commuter',
-                desc: 'Emphasis on precipitation timing, road delays, wind gusts, and travel visibility.',
-              },
-              {
-                id: 'outdoor',
-                title: 'Athletics & Runner',
-                desc: 'Focus on air quality, optimal training windows, humidity, and heat stress.',
-              },
-              {
-                id: 'detailed',
-                title: 'Meteorological Deep Dive',
-                desc: 'Technical analysis of barometric changes, dew points, and frontal passages.',
-              },
-            ] as const
-          ).map((item) => (
-            <div
-              key={item.id}
-              className={`persona-card ${settings.briefingTone === item.id ? 'active' : ''}`}
-              onClick={() => setSettings((s) => ({ ...s, briefingTone: item.id }))}
-              role="button"
-              tabIndex={0}
-            >
-              <div className="persona-title">
-                <span>{item.title}</span>
-                {settings.briefingTone === item.id && <Check size={15} color="hsl(var(--accent))" />}
-              </div>
-              <div className="persona-desc">{item.desc}</div>
-            </div>
-          ))}
         </div>
       </section>
 
@@ -3992,6 +4014,13 @@ function SettingsView({
           </div>
         </div>
       </section>
+
+      {/* Atmospheric Soundscape & Audio Settings */}
+      <AtmosphericSoundscapeSettings
+        weatherCode={weatherCode}
+        isDay={effectiveTheme === 'day'}
+        windSpeedKmh={windSpeedKmh}
+      />
 
       {/* Android App & Mobile Installation */}
       <section className="settings-section-card" data-testid="card-settings-android">

@@ -26,19 +26,19 @@ export function HumidityMiniMeter({
   }, [relativeHumidity]);
 
   return (
-    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none">
-      <div className="flex items-center justify-between text-[10.5px] font-mono mb-1.5">
-        <span className="flex items-center gap-1 text-muted-foreground">
-          <Droplets size={12} className="text-teal-400" />
-          Comfort scale
+    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none min-w-0 max-w-full overflow-hidden">
+      <div className="flex items-center justify-between text-[10.5px] font-mono mb-1.5 min-w-0">
+        <span className="flex items-center gap-1 text-muted-foreground min-w-0 truncate">
+          <Droplets size={12} className="text-teal-400 shrink-0" />
+          <span className="truncate">Comfort scale</span>
         </span>
-        <span className={`font-semibold ${comfortState.color}`}>
+        <span className={`font-semibold shrink-0 ml-1 ${comfortState.color}`}>
           {comfortState.label}
         </span>
       </div>
 
       {/* Moisture spectrum meter */}
-      <div className="py-2">
+      <div className="py-2 w-full min-w-0">
         <div className="relative h-2 w-full rounded-full bg-white/10 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-amber-400 via-emerald-400 via-teal-400 to-sky-500 opacity-80" />
         </div>
@@ -52,7 +52,7 @@ export function HumidityMiniMeter({
           </div>
         </div>
 
-        <div className="flex justify-between text-[8.5px] font-mono text-muted-foreground">
+        <div className="flex justify-between text-[8px] font-mono text-muted-foreground w-full min-w-0">
           <span>Dry (20%)</span>
           <span>Ideal (45%)</span>
           <span>Humid (80%+)</span>

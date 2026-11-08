@@ -100,13 +100,13 @@ export function WindRoseVisualization({
   const beaufort = getBeaufort(speed);
 
   // Layout parameters for SVG
-  const width = 84;
-  const height = 84;
+  const width = 68;
+  const height = 68;
   const cx = width / 2;
   const cy = height / 2;
-  const hubRadius = 7.5;
-  const maxPetalRadius = 31;
-  const labelRadius = 37.5;
+  const hubRadius = 6.2;
+  const maxPetalRadius = 25;
+  const labelRadius = 30.5;
 
   // D3 Scales & Radial Arc Generator
   const { sectors, speedScale } = useMemo(() => {
@@ -227,6 +227,9 @@ export function WindRoseVisualization({
         paddingTop: '8px',
         borderTop: '1px solid hsl(var(--border) / 0.55)',
         width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        overflow: 'hidden',
         userSelect: 'none',
       }}
       role="region"
@@ -242,11 +245,13 @@ export function WindRoseVisualization({
           fontFamily: 'var(--app-font-mono)',
           color: 'hsl(var(--muted-foreground))',
           marginBottom: '6px',
+          width: '100%',
+          minWidth: 0,
         }}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-          <Compass size={11} className="text-primary/70" />
-          <span>Wind rose</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', minWidth: 0, overflow: 'hidden' }}>
+          <Compass size={11} className="text-primary/70 shrink-0" />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Wind rose</span>
         </span>
         <span
           style={{
@@ -255,6 +260,8 @@ export function WindRoseVisualization({
             gap: '3px',
             color: 'hsl(var(--primary))',
             fontWeight: 600,
+            flexShrink: 0,
+            marginLeft: '4px',
           }}
         >
           <span>From {activeSectorDef.code} · {Math.round(normDeg)}°</span>
@@ -267,7 +274,9 @@ export function WindRoseVisualization({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '10px',
+          gap: '8px',
+          width: '100%',
+          minWidth: 0,
         }}
       >
         {/* D3 Polar Wind Rose SVG */}
@@ -470,7 +479,8 @@ export function WindRoseVisualization({
             flexDirection: 'column',
             justifyContent: 'center',
             minWidth: 0,
-            gap: '3px',
+            gap: '2px',
+            overflow: 'hidden',
           }}
         >
           {/* Beaufort Tier */}

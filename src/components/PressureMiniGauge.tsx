@@ -28,20 +28,20 @@ export function PressureMiniGauge({
   const trendColor = pressureTrend === 'rising' ? 'text-emerald-400' : pressureTrend === 'falling' ? 'text-amber-400' : 'text-slate-300';
 
   return (
-    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none">
-      <div className="flex items-center justify-between text-[10.5px] font-mono mb-1.5">
-        <span className="flex items-center gap-1 text-muted-foreground">
-          <Gauge size={12} className="text-cyan-400" />
-          Barometer
+    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none min-w-0 max-w-full overflow-hidden">
+      <div className="flex items-center justify-between text-[10.5px] font-mono mb-1.5 min-w-0">
+        <span className="flex items-center gap-1 text-muted-foreground min-w-0 truncate">
+          <Gauge size={12} className="text-cyan-400 shrink-0" />
+          <span className="truncate">Barometer</span>
         </span>
-        <span className={`font-semibold flex items-center gap-1 ${trendColor}`}>
+        <span className={`font-semibold flex items-center gap-1 shrink-0 ml-1 ${trendColor}`}>
           <TrendIcon size={12} />
           {trendText}
         </span>
       </div>
 
       {/* Barometer gradient gauge */}
-      <div className="py-2">
+      <div className="py-2 w-full min-w-0">
         <div className="relative h-2 w-full rounded-full bg-white/10 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-rose-500 via-sky-400 to-emerald-400 opacity-80" />
         </div>
@@ -55,7 +55,7 @@ export function PressureMiniGauge({
           </div>
         </div>
 
-        <div className="flex justify-between text-[8.5px] font-mono text-muted-foreground">
+        <div className="flex justify-between text-[8px] font-mono text-muted-foreground w-full min-w-0">
           <span>980 Low</span>
           <span>1013 Norm</span>
           <span>1040 High</span>
@@ -63,7 +63,7 @@ export function PressureMiniGauge({
       </div>
 
       {/* Summary */}
-      <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-muted-foreground">
+      <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-muted-foreground min-w-0">
         <span className="truncate">{pressureState.desc}</span>
         {elevationM != null && (
           <span className="font-medium text-foreground ml-1 shrink-0">

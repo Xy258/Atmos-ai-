@@ -31,12 +31,12 @@ export function PrecipitationMiniChart({
         try {
           const date = new Date(timeStr);
           if (timeFormat === '24h') {
-            label = `${date.getHours()}:00`;
+            label = `${date.getHours()}h`;
           } else {
             const h = date.getHours();
-            const ampm = h >= 12 ? 'PM' : 'AM';
+            const ampm = h >= 12 ? 'p' : 'a';
             const h12 = h % 12 || 12;
-            label = `${h12} ${ampm}`;
+            label = `${h12}${ampm}`;
           }
         } catch {
           label = `+${i}h`;
@@ -57,33 +57,33 @@ export function PrecipitationMiniChart({
   };
 
   return (
-    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none">
-      <div className="flex items-center justify-between text-[10.5px] font-mono text-muted-foreground mb-1.5">
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block animate-pulse" />
-          Next 6 hours chance
+    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none min-w-0 max-w-full overflow-hidden">
+      <div className="flex items-center justify-between text-[10.5px] font-mono text-muted-foreground mb-1.5 min-w-0">
+        <span className="flex items-center gap-1 min-w-0 truncate">
+          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block animate-pulse shrink-0" />
+          <span className="truncate">Next 6h chance</span>
         </span>
-        <span className="font-semibold text-foreground">
+        <span className="font-semibold text-foreground shrink-0 ml-1">
           {maxProb > 0 ? `Peak ${maxProb}%` : 'Dry forecast'}
         </span>
       </div>
 
       {/* Mini probability bars */}
-      <div className="grid grid-cols-6 gap-1.5 items-end h-[54px] pt-1">
+      <div className="grid grid-cols-6 gap-1 items-end h-[52px] pt-1 w-full min-w-0">
         {upcomingHours.map((item, idx) => {
           const heightPercent = Math.max(12, Math.min(100, item.prob));
           return (
-            <div key={idx} className="flex flex-col items-center gap-1 h-full justify-end">
-              <span className="text-[9px] font-mono font-medium text-slate-300">
+            <div key={idx} className="flex flex-col items-center gap-1 h-full justify-end min-w-0 w-full overflow-hidden">
+              <span className="text-[8.5px] font-mono font-medium text-slate-300 truncate w-full text-center">
                 {item.prob > 0 ? `${item.prob}%` : '0%'}
               </span>
-              <div className="w-full bg-white/5 rounded-t-sm overflow-hidden h-[34px] flex items-end">
+              <div className="w-full bg-white/5 rounded-t-sm overflow-hidden h-[32px] flex items-end">
                 <div
                   className={`w-full rounded-t-sm bg-gradient-to-t ${getProbColor(item.prob)} transition-all duration-300`}
                   style={{ height: `${heightPercent}%` }}
                 />
               </div>
-              <span className="text-[8.5px] font-mono text-muted-foreground truncate w-full text-center">
+              <span className="text-[8px] font-mono text-muted-foreground truncate w-full text-center">
                 {item.hour}
               </span>
             </div>
@@ -92,9 +92,9 @@ export function PrecipitationMiniChart({
       </div>
 
       {/* Bottom Summary Pill */}
-      <div className="mt-2.5 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-muted-foreground">
-        <span>Accumulation</span>
-        <span className="text-foreground font-medium">
+      <div className="mt-2 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-muted-foreground min-w-0">
+        <span className="truncate">Accumulation</span>
+        <span className="text-foreground font-medium truncate ml-1 shrink-0">
           {currentPrecipitationMm > 0
             ? `${currentPrecipitationMm} ${precipUnit} active`
             : 'No rain expected'}

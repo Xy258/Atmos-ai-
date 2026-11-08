@@ -25,19 +25,19 @@ export function VisibilityClarityMini({
   }, [visibilityKm]);
 
   return (
-    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none">
-      <div className="flex items-center justify-between text-[10.5px] font-mono mb-1.5">
-        <span className="flex items-center gap-1 text-muted-foreground">
-          <Eye size={12} className="text-sky-400" />
-          Optical range
+    <div className="w-full mt-3 pt-2.5 border-t border-white/10 flex flex-col justify-between flex-1 select-none min-w-0 max-w-full overflow-hidden">
+      <div className="flex items-center justify-between text-[10.5px] font-mono mb-1.5 min-w-0">
+        <span className="flex items-center gap-1 text-muted-foreground min-w-0 truncate">
+          <Eye size={12} className="text-sky-400 shrink-0" />
+          <span className="truncate">Optical range</span>
         </span>
-        <span className={`font-semibold ${clarityStatus.color}`}>
+        <span className={`font-semibold shrink-0 ml-1 ${clarityStatus.color}`}>
           {clarityStatus.label}
         </span>
       </div>
 
       {/* Visual Clarity Gauge */}
-      <div className="py-2">
+      <div className="py-2 w-full min-w-0">
         <div className="relative h-2 w-full rounded-full bg-white/10 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-rose-500 via-amber-400 via-sky-400 to-emerald-400 opacity-80" />
         </div>
@@ -51,15 +51,15 @@ export function VisibilityClarityMini({
           </div>
         </div>
 
-        <div className="flex justify-between text-[8.5px] font-mono text-muted-foreground">
-          <span>Fog (&lt;1 {unit})</span>
-          <span>Haze</span>
-          <span>Clear (10+ {unit})</span>
+        <div className="flex justify-between text-[8px] font-mono text-muted-foreground w-full min-w-0">
+          <span className="truncate">&lt;1 {unit}</span>
+          <span className="truncate">Haze</span>
+          <span className="truncate">10+ {unit}</span>
         </div>
       </div>
 
       {/* Atmospheric Context */}
-      <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-muted-foreground">
+      <div className="mt-1.5 pt-1.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-muted-foreground min-w-0">
         <span className="truncate">{clarityStatus.desc}</span>
         {relativeHumidity != null && (
           <span className="font-medium text-foreground ml-1 shrink-0">

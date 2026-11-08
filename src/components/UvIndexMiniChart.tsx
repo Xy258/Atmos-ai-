@@ -144,6 +144,9 @@ export function UvIndexMiniChart({
         paddingTop: '8px',
         borderTop: '1px solid hsl(var(--border) / 0.55)',
         width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        overflow: 'hidden',
         userSelect: 'none',
       }}
     >
@@ -157,9 +160,11 @@ export function UvIndexMiniChart({
           fontFamily: 'var(--app-font-mono)',
           color: 'hsl(var(--muted-foreground))',
           marginBottom: '4px',
+          width: '100%',
+          minWidth: 0,
         }}
       >
-        <span>Rest of day</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Rest of day</span>
         <span
           style={{
             display: 'inline-flex',
@@ -167,6 +172,8 @@ export function UvIndexMiniChart({
             gap: '3px',
             color: themeColor,
             fontWeight: 600,
+            flexShrink: 0,
+            marginLeft: '4px',
           }}
           title={safety.text}
         >
