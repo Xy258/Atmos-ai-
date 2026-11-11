@@ -32,6 +32,13 @@ export type WeatherInsightInputUpcomingItem = {
   precipitationProbability: number;
 };
 
+export interface IndexHealthTip {
+  indexName: string;
+  value: string;
+  status: 'good' | 'moderate' | 'warning' | 'alert' | string;
+  tip: string;
+}
+
 export interface WeatherInsightInput {
   /** @minLength 1 */
   location: string;
@@ -39,6 +46,7 @@ export interface WeatherInsightInput {
   current: WeatherInsightInputCurrent;
   airQuality: WeatherInsightInputAirQuality;
   upcoming: WeatherInsightInputUpcomingItem[];
+  focus?: string;
   customActivity?: string;
 }
 
@@ -46,6 +54,9 @@ export interface WeatherInsight {
   headline: string;
   summary: string;
   recommendations: string[];
+  weatherHealthTip?: string;
+  indexHealthTips?: IndexHealthTip[];
+  focus?: string;
   generatedAt: string;
 }
 

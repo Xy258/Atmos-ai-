@@ -6,9 +6,19 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export interface IndexHealthTip {
+  indexName: string;
+  value: string;
+  status: string;
+  tip: string;
+}
+
 export interface WeatherInsight {
   headline: string;
   summary: string;
   recommendations: string[];
+  weatherHealthTip?: string;
+  indexHealthTips?: IndexHealthTip[];
+  focus?: string;
   generatedAt: string;
 }

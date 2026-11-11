@@ -24,29 +24,37 @@ export const HealthCheckResponse = zod.object({
 
 
 
+export const IndexHealthTipSchema = zod.object({
+  "indexName": zod.string(),
+  "value": zod.string(),
+  "status": zod.string(),
+  "tip": zod.string()
+});
+
 export const GenerateWeatherInsightBody = zod.object({
   "location": zod.string().min(1),
   "localTime": zod.string(),
   "current": zod.object({
-  "temperature": zod.number(),
-  "apparentTemperature": zod.number(),
-  "weatherCode": zod.number(),
-  "humidity": zod.number(),
-  "windSpeed": zod.number(),
-  "precipitationProbability": zod.number(),
-  "uvIndex": zod.number()
-}),
+    "temperature": zod.number(),
+    "apparentTemperature": zod.number(),
+    "weatherCode": zod.number(),
+    "humidity": zod.number(),
+    "windSpeed": zod.number(),
+    "precipitationProbability": zod.number(),
+    "uvIndex": zod.number()
+  }),
   "airQuality": zod.object({
-  "usAqi": zod.number(),
-  "pm2_5": zod.number()
-}),
+    "usAqi": zod.number(),
+    "pm2_5": zod.number()
+  }),
   "upcoming": zod.array(zod.object({
-  "date": zod.string(),
-  "weatherCode": zod.number(),
-  "high": zod.number(),
-  "low": zod.number(),
-  "precipitationProbability": zod.number()
-})),
+    "date": zod.string(),
+    "weatherCode": zod.number(),
+    "high": zod.number(),
+    "low": zod.number(),
+    "precipitationProbability": zod.number()
+  })),
+  "focus": zod.string().optional(),
   "customActivity": zod.string().optional()
 })
 
@@ -54,6 +62,9 @@ export const GenerateWeatherInsightResponse = zod.object({
   "headline": zod.string(),
   "summary": zod.string(),
   "recommendations": zod.array(zod.string()),
+  "weatherHealthTip": zod.string().optional(),
+  "indexHealthTips": zod.array(IndexHealthTipSchema).optional(),
+  "focus": zod.string().optional(),
   "generatedAt": zod.string()
 })
 

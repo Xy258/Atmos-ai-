@@ -350,7 +350,7 @@ export type AppSettings = {
   windUnit: 'km/h' | 'mph' | 'm/s' | 'kn';
   precipUnit: 'mm' | 'in';
   timeFormat: '12h' | '24h';
-  briefingTone: 'general' | 'commute' | 'outdoor' | 'detailed';
+  briefingTone: 'general' | 'health' | 'commute' | 'outdoor' | 'detailed';
   theme: AppTheme;
   simulateAlert?: boolean;
 };
@@ -365,11 +365,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   simulateAlert: false,
 };
 
-export function getEffectiveTheme(themeSetting: AppTheme, isDaylight: boolean): 'day' | 'night' {
-  if (themeSetting === 'day' || themeSetting === 'light') return 'day';
-  if (themeSetting === 'night' || themeSetting === 'dark') return 'night';
+export function getEffectiveTheme(themeSetting: AppTheme, isDaylight: boolean): 'light' | 'dark' {
+  if (themeSetting === 'light' || themeSetting === 'day') return 'light';
+  if (themeSetting === 'dark' || themeSetting === 'night') return 'dark';
   // 'auto': sync with actual local solar/daylight weather conditions
-  return isDaylight ? 'day' : 'night';
+  return isDaylight ? 'light' : 'dark';
 }
 
 const DEFAULT_LOCATIONS: Location[] = [
@@ -1346,7 +1346,7 @@ function Home() {
     try {
       localStorage.setItem('atmos_settings', JSON.stringify(settings));
       const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-      if (effectiveTheme === 'night') {
+      if (effectiveTheme === 'dark') {
         document.documentElement.classList.add('dark');
         if (metaThemeColor) metaThemeColor.setAttribute('content', '#070c18');
       } else {
@@ -1358,14 +1358,14 @@ function Home() {
     }
   }, [settings, effectiveTheme]);
 
-  // Quick theme cycler: Auto (local weather sync) -> Day Lock -> Night Lock -> Auto
+  // Quick theme cycler: Auto (local weather sync) -> Light -> Dark -> Auto
   const cycleTheme = useCallback(() => {
     setSettings((prev) => {
       let nextTheme: AppTheme = 'auto';
       if (prev.theme === 'auto') {
-        nextTheme = 'day';
-      } else if (prev.theme === 'day' || prev.theme === 'light') {
-        nextTheme = 'night';
+        nextTheme = 'light';
+      } else if (prev.theme === 'light' || prev.theme === 'day') {
+        nextTheme = 'dark';
       } else {
         nextTheme = 'auto';
       }
@@ -1373,10 +1373,10 @@ function Home() {
       const nextEffective = getEffectiveTheme(nextTheme, isActualDaylight);
       const msg =
         nextTheme === 'auto'
-          ? `Auto Theme (locked to ${nextEffective === 'day' ? 'Day' : 'Night'} from actual local weather)`
-          : nextTheme === 'day'
-          ? 'Day Theme Locked'
-          : 'Night Theme Locked';
+          ? `Auto Theme (synced to ${nextEffective === 'light' ? 'Light' : 'Dark'} from local weather)`
+          : nextTheme === 'light'
+          ? 'Light Theme'
+          : 'Dark Theme';
       showToast(msg);
       return { ...prev, theme: nextTheme };
     });
@@ -1624,42 +1624,47 @@ function Home() {
 
   const requestedInsightRef = useRef<string>('');
 
-  const generateInsight = useCallback(() => {
-    if (!forecast || !air || !current || !daily) return;
-    insight.mutate({
-      data: {
-        location: `${location.name}, ${location.country ?? ''}`,
-        localTime: localLabel(forecast.timezone, settings.timeFormat),
-        current: {
-          temperature: current.temperature_2m,
-          apparentTemperature: current.apparent_temperature,
-          weatherCode: current.weather_code,
-          humidity: current.relative_humidity_2m,
-          windSpeed: current.wind_speed_10m,
-          precipitationProbability: forecast.hourly.precipitation_probability[hourlyStart] ?? 0,
-          uvIndex: current.uv_index,
+  const generateInsight = useCallback(
+    (overrideFocus?: AppSettings['briefingTone']) => {
+      if (!forecast || !air || !current || !daily) return;
+      const focusToUse = overrideFocus || settings.briefingTone || 'general';
+      insight.mutate({
+        data: {
+          location: `${location.name}, ${location.country ?? ''}`,
+          localTime: localLabel(forecast.timezone, settings.timeFormat),
+          current: {
+            temperature: current.temperature_2m,
+            apparentTemperature: current.apparent_temperature,
+            weatherCode: current.weather_code,
+            humidity: current.relative_humidity_2m,
+            windSpeed: current.wind_speed_10m,
+            precipitationProbability: forecast.hourly.precipitation_probability[hourlyStart] ?? 0,
+            uvIndex: current.uv_index,
+          },
+          airQuality: { usAqi: air.current.us_aqi, pm2_5: air.current.pm2_5 },
+          upcoming: daily.time.slice(0, 5).map((date, index) => ({
+            date,
+            weatherCode: daily.weather_code[index],
+            high: daily.temperature_2m_max[index],
+            low: daily.temperature_2m_min[index],
+            precipitationProbability: daily.precipitation_probability_max[index],
+          })),
+          focus: focusToUse,
         },
-        airQuality: { usAqi: air.current.us_aqi, pm2_5: air.current.pm2_5 },
-        upcoming: daily.time.slice(0, 5).map((date, index) => ({
-          date,
-          weatherCode: daily.weather_code[index],
-          high: daily.temperature_2m_max[index],
-          low: daily.temperature_2m_min[index],
-          precipitationProbability: daily.precipitation_probability_max[index],
-        })),
-      },
-    });
-  }, [forecast, air, location.name, location.country, settings.timeFormat, current, hourlyStart, daily, insight.mutate]);
+      });
+    },
+    [forecast, air, location.name, location.country, settings.timeFormat, settings.briefingTone, current, hourlyStart, daily, insight.mutate]
+  );
 
   useEffect(() => {
     if (forecast && air && current && daily && !insight.isPending) {
-      const key = `${location.latitude}_${location.longitude}_${current.time}`;
+      const key = `${location.latitude}_${location.longitude}_${current.time}_${settings.briefingTone}`;
       if (requestedInsightRef.current !== key) {
         requestedInsightRef.current = key;
         generateInsight();
       }
     }
-  }, [forecast, air, current, daily, location.latitude, location.longitude, insight.isPending, generateInsight]);
+  }, [forecast, air, current, daily, location.latitude, location.longitude, settings.briefingTone, insight.isPending, generateInsight]);
 
   if (permission === 'denied' && !forecast) return <PermissionState onRetry={useCurrentLocation} />;
 
@@ -1667,7 +1672,7 @@ function Home() {
     <div className="atmos-app">
       <DynamicWeatherBackdrop
         weatherCode={current?.weather_code ?? 0}
-        isDay={effectiveTheme === 'day'}
+        isDay={effectiveTheme === 'light'}
         windSpeed={current?.wind_speed_10m ?? 12}
         windDirection={current?.wind_direction_10m ?? 180}
         cloudCover={current?.cloud_cover ?? 20}
@@ -1730,15 +1735,15 @@ function Home() {
                 aria-label={`Current theme: ${settings.theme}`}
                 title={`Theme: ${
                   settings.theme === 'auto'
-                    ? `Auto (${effectiveTheme === 'day' ? 'Daylight' : 'Night'} from local weather)`
-                    : settings.theme === 'day' || settings.theme === 'light'
-                    ? 'Day Lock'
-                    : 'Night Lock'
-                } · Click to cycle Auto / Day / Night`}
+                    ? `Auto (${effectiveTheme === 'light' ? 'Light' : 'Dark'} from local weather)`
+                    : settings.theme === 'light' || settings.theme === 'day'
+                    ? 'Light'
+                    : 'Dark'
+                } · Click to cycle Auto / Light / Dark`}
               >
                 {settings.theme === 'auto' ? (
                   <Sparkles size={16} />
-                ) : effectiveTheme === 'day' ? (
+                ) : effectiveTheme === 'light' ? (
                   <Sun size={16} />
                 ) : (
                   <Moon size={16} />
@@ -1764,7 +1769,7 @@ function Home() {
               </button>
               <AtmosphericAudioSimpleToggle
                 weatherCode={current?.weather_code ?? 0}
-                isDay={effectiveTheme === 'day'}
+                isDay={isActualDaylight}
                 windSpeedKmh={current?.wind_speed_10m ?? 12}
               />
             </div>
@@ -2131,7 +2136,7 @@ function TodayView({
   aqiLabel: string;
   hourlyStart: number;
   insight: ReturnType<typeof useGenerateWeatherInsight>;
-  onGenerateInsight: () => void;
+  onGenerateInsight: (overrideTone?: AppSettings['briefingTone']) => void;
   onNavigateToAirQuality: () => void;
   settings: AppSettings;
   onUpdateSettings?: React.Dispatch<React.SetStateAction<AppSettings>>;
@@ -2154,14 +2159,9 @@ function TodayView({
     ? isHourDaylight(forecast.hourly.time[selectedHour], daily.sunrise[0], daily.sunset[0])
     : current.is_day === 1;
 
-  // In auto mode, the Atmospheric card is dynamically driven by actual local solar conditions.
-  // In manual lock, it stays locked to Day or Night while keeping real local weather conditions (rain, temp, wind, etc.)
-  const activeIsDay =
-    settings.theme === 'day' || settings.theme === 'light'
-      ? true
-      : settings.theme === 'night' || settings.theme === 'dark'
-      ? false
-      : localIsDay;
+  // The Atmospheric State card ALWAYS accurately reflects the local astronomical & solar condition
+  // (e.g. at 8 PM at night it shows the Moon and nighttime sky, regardless of whether UI is Light or Dark)
+  const activeIsDay = localIsDay;
 
   const activeTemp = isViewingSelectedHour
     ? (forecast.hourly.temperature_2m[selectedHour] ?? current.temperature_2m)
@@ -2557,7 +2557,15 @@ function TodayView({
           insight={insight}
           onGenerate={onGenerateInsight}
           briefingTone={settings.briefingTone}
-          onToneChange={(tone) => onUpdateSettings?.((s) => ({ ...s, briefingTone: tone }))}
+          onToneChange={(tone) => {
+            onUpdateSettings?.((s) => ({ ...s, briefingTone: tone }));
+            onGenerateInsight(tone);
+          }}
+          currentWeatherCode={current.weather_code}
+          currentUvIndex={current.uv_index}
+          currentAqi={air?.us_aqi}
+          currentTemp={current.temperature_2m}
+          currentFeelsLike={current.apparent_temperature}
         />
       </div>
 
@@ -2739,10 +2747,17 @@ function TodayView({
 const BRIEFING_FOCUS_OPTIONS = [
   {
     id: 'general' as const,
-    label: 'Balanced',
-    fullTitle: 'Balanced & Practical',
-    desc: 'Everyday life advice: commute, comfort, clothing & UV protection',
+    label: 'Daily',
+    fullTitle: 'General Daily Overview',
+    desc: 'Everyday life advice: diurnal shifts, comfort, clothing & UV protection',
     icon: Sparkles,
+  },
+  {
+    id: 'health' as const,
+    label: 'Health',
+    fullTitle: 'Health & Environmental Index',
+    desc: 'UV index sunscreen thresholds, particulate respiration & thermal cardiac strain',
+    icon: HeartPulse,
   },
   {
     id: 'commute' as const,
@@ -2768,18 +2783,28 @@ const BRIEFING_FOCUS_OPTIONS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Atmos AI Briefing Card (with in-card Focus selector)
+// Atmos AI Briefing Card (with in-card Focus selector & Actionable Health Guidance)
 // ---------------------------------------------------------------------------
 function AtmosBriefingCard({
   insight,
   onGenerate,
   briefingTone = 'general',
   onToneChange,
+  currentWeatherCode = 0,
+  currentUvIndex,
+  currentAqi,
+  currentTemp,
+  currentFeelsLike,
 }: {
   insight: ReturnType<typeof useGenerateWeatherInsight>;
-  onGenerate: () => void;
+  onGenerate: (overrideTone?: AppSettings['briefingTone']) => void;
   briefingTone?: AppSettings['briefingTone'];
   onToneChange?: (tone: AppSettings['briefingTone']) => void;
+  currentWeatherCode?: number;
+  currentUvIndex?: number;
+  currentAqi?: number;
+  currentTemp?: number;
+  currentFeelsLike?: number;
 }) {
   const data = insight.data;
   const [focusMenuOpen, setFocusMenuOpen] = useState(false);
@@ -2800,14 +2825,170 @@ function AtmosBriefingCard({
   const currentOption = BRIEFING_FOCUS_OPTIONS.find((o) => o.id === briefingTone) || BRIEFING_FOCUS_OPTIONS[0];
   const CurrentIcon = currentOption.icon;
 
-  const toneData: Record<AppSettings['briefingTone'], { headline: string; summary: string; recommendations: string[] }> = {
+  // Fallback weather condition health tip computed from current conditions
+  const fallbackWeatherHealthTip = useMemo(() => {
+    if ([95, 96, 99].includes(currentWeatherCode)) {
+      return 'Thunderstorm safety: seek enclosed shelter immediately. Sudden pressure drops and airborne pollen fragmentation can trigger severe thunderstorm asthma.';
+    }
+    if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(currentWeatherCode)) {
+      return 'Rain hazard: wet surfaces increase slipping risk. Keep footwear and head dry to prevent rapid thermal loss and post-commute chills.';
+    }
+    if ([71, 73, 75, 77, 85, 86].includes(currentWeatherCode)) {
+      return 'Winter freeze hazard: inhaling sub-freezing air can constrict bronchial passages. Warm up gently indoors and wear high-traction footwear for black ice.';
+    }
+    if ([45, 48].includes(currentWeatherCode)) {
+      return 'Fog caution: ground-level moisture traps fine vehicle particulates, which can irritate reactive airways; wear a light mask if sensitive.';
+    }
+    if (currentWeatherCode === 0) {
+      return 'Clear sky solar exposure: direct sunlight increases ocular strain; wear 100% UV-blocking sunglasses and maintain regular hydration.';
+    }
+    return 'Overcast light: up to 80% of UV rays penetrate thin clouds; maintain skin awareness and hydration during midday hours.';
+  }, [currentWeatherCode]);
+
+  // Fallback index-specific actionable health tips (UV 3+ sunscreen, UV 8+ seek shade, etc.)
+  const fallbackIndexHealthTips = useMemo(() => {
+    const tips: Array<{ indexName: string; value: string; status: 'good' | 'moderate' | 'warning' | 'alert' | string; tip: string }> = [];
+
+    // 1. UV Index
+    const uv = currentUvIndex !== undefined ? Math.round(currentUvIndex * 10) / 10 : 4;
+    if (uv >= 11) {
+      tips.push({
+        indexName: 'UV Index',
+        value: `${uv} (Extreme)`,
+        status: 'alert',
+        tip: 'UV 11+ Extreme: unprotected skin burns in <10 mins. Stay indoors or in dense shade during midday; apply SPF 50+ sunscreen, wear wide-brim hat & UV400 sunglasses.',
+      });
+    } else if (uv >= 8) {
+      tips.push({
+        indexName: 'UV Index',
+        value: `${uv} (Very High)`,
+        status: 'warning',
+        tip: 'UV 8+ detected: seek shade between 10am-4pm. Generously apply SPF 30-50+ sunscreen, reapply every 2 hours, and wear UV-protective sunglasses and a hat.',
+      });
+    } else if (uv >= 6) {
+      tips.push({
+        indexName: 'UV Index',
+        value: `${uv} (High)`,
+        status: 'warning',
+        tip: 'UV 6+ High: solar radiation is elevated. Apply SPF 30+ sunscreen, wear UV sunglasses, and avoid prolonged unshaded midday exposure.',
+      });
+    } else if (uv >= 3) {
+      tips.push({
+        indexName: 'UV Index',
+        value: `${uv} (Moderate)`,
+        status: 'moderate',
+        tip: 'UV 3+ detected: recommend applying SPF 30+ sunscreen, protective eyewear, and seeking shade during peak midday hours (11am-3pm).',
+      });
+    } else {
+      tips.push({
+        indexName: 'UV Index',
+        value: `${uv} (Low)`,
+        status: 'good',
+        tip: 'UV < 3 Low: minimal UV radiation. Safe to enjoy daytime outdoor activities without high sunburn risk; light sunscreen optional.',
+      });
+    }
+
+    // 2. Air Quality (US AQI)
+    const aqi = currentAqi !== undefined ? Math.round(currentAqi) : 38;
+    if (aqi > 150) {
+      tips.push({
+        indexName: 'Air Quality',
+        value: `AQI ${aqi} (Unhealthy)`,
+        status: 'alert',
+        tip: 'Everyone may experience health effects. Minimize prolonged outdoor exertion; wear an N95 mask and run indoor HEPA filtration.',
+      });
+    } else if (aqi > 100) {
+      tips.push({
+        indexName: 'Air Quality',
+        value: `AQI ${aqi} (Sensitive Groups)`,
+        status: 'warning',
+        tip: 'Individuals with asthma or heart/lung conditions should reduce heavy outdoor exertion and monitor respiration.',
+      });
+    } else if (aqi > 50) {
+      tips.push({
+        indexName: 'Air Quality',
+        value: `AQI ${aqi} (Moderate)`,
+        status: 'moderate',
+        tip: 'Air quality is acceptable; unusually sensitive individuals should watch for minor cough or respiratory irritation.',
+      });
+    } else {
+      tips.push({
+        indexName: 'Air Quality',
+        value: `AQI ${aqi} (Good)`,
+        status: 'good',
+        tip: 'Clean, healthy air. Optimal for cardiovascular endurance, outdoor running, and deep aerobic breathing.',
+      });
+    }
+
+    // 3. Thermal Comfort & Strain
+    const temp = currentTemp !== undefined ? Math.round(currentTemp) : 21;
+    const feels = currentFeelsLike !== undefined ? Math.round(currentFeelsLike) : temp;
+    if (feels >= 35) {
+      tips.push({
+        indexName: 'Thermal Comfort',
+        value: `${feels}°C (Extreme Heat)`,
+        status: 'alert',
+        tip: 'High risk of heat cramps, exhaustion, or stroke. Drink 500ml+ electrolyte fluids hourly, stay in air conditioning, and avoid peak exertion.',
+      });
+    } else if (feels >= 28) {
+      tips.push({
+        indexName: 'Thermal Comfort',
+        value: `${feels}°C (High Heat)`,
+        status: 'warning',
+        tip: 'Elevated thermal strain. Drink 300-400ml water per hour outdoors, wear lightweight breathable clothes, and take shade breaks.',
+      });
+    } else if (feels <= -5) {
+      tips.push({
+        indexName: 'Thermal Comfort',
+        value: `${feels}°C (Severe Cold)`,
+        status: 'alert',
+        tip: 'Frostbite risk on exposed skin in <30 min. Dress in windproof thermal layers, insulated gloves, and face covering.',
+      });
+    } else if (feels <= 5) {
+      tips.push({
+        indexName: 'Thermal Comfort',
+        value: `${feels}°C (Cold Chill)`,
+        status: 'moderate',
+        tip: 'Chilly conditions constrict peripheral blood vessels. Wear a warm jacket, scarf, and insulated gloves.',
+      });
+    } else {
+      tips.push({
+        indexName: 'Thermal Comfort',
+        value: `${temp}°C (Feels ${feels}°C)`,
+        status: 'good',
+        tip: 'Comfortable thermal equilibrium. Low physiological strain for standard daily routines and fitness.',
+      });
+    }
+
+    return tips;
+  }, [currentUvIndex, currentAqi, currentTemp, currentFeelsLike]);
+
+  const toneData: Record<
+    AppSettings['briefingTone'],
+    { headline: string; summary: string; recommendations: string[] }
+  > = {
     general: {
-      headline: 'Balanced Daily Outlook',
+      headline: 'Balanced Daily Atmospheric Outlook',
       summary: 'Equilibrium atmospheric conditions. Recommended for general day-to-day planning, clothing choices, and outdoor comfort.',
       recommendations: [
-        'Layer comfortably for shifting diurnal temperatures.',
-        'Stay hydrated and track midday UV exposure.',
-        'Keep light weather protection handy for unexpected shifts.',
+        currentUvIndex && currentUvIndex >= 3
+          ? (currentUvIndex >= 8 ? 'UV 8+: Seek shade between 10am-4pm, apply SPF 50+ sunscreen, and wear UV-protective sunglasses.' : 'UV 3+: Apply SPF 30+ sunscreen during peak midday hours for skin protection.')
+          : 'Layer comfortably for shifting diurnal temperatures throughout the day.',
+        'Stay hydrated and track midday weather condition shifts.',
+        'Keep light weather protection handy for unexpected atmospheric shifts.',
+      ],
+    },
+    health: {
+      headline: currentUvIndex && currentUvIndex >= 8 ? 'High Solar Index: Seek Shade & Apply Sunscreen' : currentAqi && currentAqi > 100 ? 'Sensitive Respiratory Outlook' : 'Optimal Bioclimatic Health Balance',
+      summary: 'Biometeorological analysis of physiological strain, UV radiation skin barriers, and cardiovascular pacing.',
+      recommendations: [
+        currentUvIndex && currentUvIndex >= 3
+          ? (currentUvIndex >= 8 ? 'UV 8+ detected: seek shade between 10am-4pm, apply broad-spectrum SPF 50+ sunscreen, and wear UV-blocking sunglasses.' : 'UV 3+ active: recommend applying SPF 30+ sunscreen before outdoor exposure.')
+          : 'Low UV index provides safe conditions for daytime outdoor light exposure.',
+        currentAqi && currentAqi > 100
+          ? 'Air quality is elevated; pace aerobic exertion and consider an indoor workout.'
+          : 'Clean air quality supports deep breathing and cellular oxygenation during exercise.',
+        'Hydrate steadily and take shade breaks during periods of peak daylight.',
       ],
     },
     commute: {
@@ -2840,14 +3021,22 @@ function AtmosBriefingCard({
   };
 
   const activeData = data || toneData[briefingTone] || toneData.general;
+  const activeWeatherHealthTip = data?.weatherHealthTip || fallbackWeatherHealthTip;
+  const activeIndexHealthTips = data?.indexHealthTips && data.indexHealthTips.length > 0 ? data.indexHealthTips : fallbackIndexHealthTips;
 
   return (
     <section className="insight-card" data-testid="card-ai-briefing">
       <div className="briefing-header-row">
-        <div className="briefing-badge">
-          <Activity size={14} className="briefing-pulse-icon" />
-          ATMOS BRIEFING
+        <div className="flex items-center gap-2">
+          <div className="briefing-badge">
+            <Activity size={14} className="briefing-pulse-icon" />
+            ATMOS BRIEFING
+          </div>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-300 font-semibold border border-amber-400/30 flex items-center gap-1">
+            <Sparkles size={10} /> AI POWERED
+          </span>
         </div>
+
         <div className="briefing-focus-wrap" ref={dropdownRef}>
           <button
             type="button"
@@ -2883,7 +3072,7 @@ function AtmosBriefingCard({
                     onClick={() => {
                       onToneChange?.(opt.id);
                       setFocusMenuOpen(false);
-                      onGenerate();
+                      onGenerate(opt.id);
                     }}
                     role="menuitem"
                   >
@@ -2913,49 +3102,51 @@ function AtmosBriefingCard({
           />
           <div
             className="skeleton"
-            style={{ height: 50, width: '94%', marginTop: 13, background: 'rgba(255,255,255,.11)' }}
+            style={{ height: 44, width: '94%', marginTop: 13, background: 'rgba(255,255,255,.11)' }}
+          />
+          <div
+            className="skeleton"
+            style={{ height: 72, width: '100%', marginTop: 14, background: 'rgba(255,255,255,.08)' }}
           />
           <div
             className="skeleton"
             style={{ height: 60, width: '90%', marginTop: 14, background: 'rgba(255,255,255,.08)' }}
           />
         </>
-      ) : insight.isError ? (
-        <>
-          <h3 className="insight-title">{activeData.headline}</h3>
-          <p className="insight-summary">{activeData.summary}</p>
-          <div className="recommendations">
-            {activeData.recommendations.map((recommendation, index) => (
-              <div
-                className="recommendation"
-                data-testid={`text-recommendation-${index}`}
-                key={`${recommendation}-${index}`}
-              >
-                {recommendation}
-              </div>
-            ))}
-          </div>
-        </>
-      ) : data ? (
-        <>
-          <h3 className="insight-title">{data.headline}</h3>
-          <p className="insight-summary">{data.summary}</p>
-          <div className="recommendations">
-            {data.recommendations.map((recommendation, index) => (
-              <div
-                className="recommendation"
-                data-testid={`text-recommendation-${index}`}
-                key={`${recommendation}-${index}`}
-              >
-                {recommendation}
-              </div>
-            ))}
-          </div>
-        </>
       ) : (
         <>
           <h3 className="insight-title">{activeData.headline}</h3>
           <p className="insight-summary">{activeData.summary}</p>
+
+          {/* 1. Weather Condition Health Tip Banner */}
+          {activeWeatherHealthTip && (
+            <div className="briefing-health-banner" data-testid="banner-weather-health-tip">
+              <div className="briefing-health-icon">
+                <HeartPulse size={15} />
+              </div>
+              <div className="briefing-health-content">
+                <div className="briefing-health-tag">WEATHER CONDITION HEALTH ADVISORY</div>
+                <p className="briefing-health-text">{activeWeatherHealthTip}</p>
+              </div>
+            </div>
+          )}
+
+          {/* 2. Actionable Index Health Tips (UV Index, Air Quality, Thermal Comfort) */}
+          {activeIndexHealthTips && activeIndexHealthTips.length > 0 && (
+            <div className="briefing-indices-grid" data-testid="grid-index-health-tips">
+              {activeIndexHealthTips.map((tip, idx) => (
+                <div key={idx} className={`briefing-index-card status-${tip.status}`} data-testid={`card-index-tip-${idx}`}>
+                  <div className="briefing-index-head">
+                    <span className="briefing-index-name">{tip.indexName}</span>
+                    <span className={`briefing-index-badge ${tip.status}`}>{tip.value}</span>
+                  </div>
+                  <p className="briefing-index-tip">{tip.tip}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 3. Focus-Specific Practical Recommendations */}
           <div className="recommendations">
             {activeData.recommendations.map((recommendation, index) => (
               <div
@@ -2970,22 +3161,22 @@ function AtmosBriefingCard({
         </>
       )}
 
-      <div className="briefing-footer-row">
+      <div className="briefing-footer-row flex items-center justify-between flex-wrap gap-2 mt-4 pt-3 border-t border-white/10">
         <button
           className="insight-button"
           data-testid="button-generate-insight"
-          onClick={onGenerate}
+          onClick={() => onGenerate(briefingTone)}
           disabled={insight.isPending}
         >
           {insight.isPending
-            ? 'Reading the atmosphere…'
+            ? 'Synthesizing atmosphere…'
             : data
-            ? 'Refresh briefing'
-            : 'Generate my briefing'}
+            ? 'Regenerate AI briefing'
+            : 'Generate AI briefing'}
         </button>
 
         {data?.generatedAt && (
-          <span className="briefing-timestamp">
+          <span className="briefing-timestamp text-[11px] font-mono text-muted-foreground">
             Updated {new Date(data.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
@@ -3348,10 +3539,6 @@ function AirQualityView({
           <div>
             <div className="eyebrow">Atmospheric Contaminants</div>
             <h2 className="section-title">Individual Pollutant Concentrations at {location.name}</h2>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/70 px-3 py-1.5 rounded-full border border-border">
-            <Info size={13} className="text-primary" />
-            <span>Hover or tap any pollutant card for sources & specific health risks</span>
           </div>
         </div>
 
@@ -3804,7 +3991,7 @@ function SettingsView({
   settings,
   setSettings,
   onReset,
-  effectiveTheme = 'day',
+  effectiveTheme = 'light',
   locationName,
   weatherCode = 0,
   windSpeedKmh = 12,
@@ -3812,7 +3999,7 @@ function SettingsView({
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   onReset: () => void;
-  effectiveTheme?: 'day' | 'night';
+  effectiveTheme?: 'light' | 'dark';
   locationName?: string;
   weatherCode?: number;
   windSpeedKmh?: number;
@@ -3922,21 +4109,21 @@ function SettingsView({
             <Sun size={18} />
           </div>
           <div>
-            <h3 className="settings-section-title">Visual Appearance & Day/Night Mode</h3>
-            <div className="settings-section-desc">Experience auto-sync with actual local weather, or lock into Day or Night</div>
+            <h3 className="settings-section-title">Visual Appearance & Theme</h3>
+            <div className="settings-section-desc">Choose Light or Dark appearance, or automatically adapt with local weather</div>
           </div>
         </div>
 
         <div className="settings-rows">
           <div className="settings-row">
             <div>
-              <div className="settings-row-label">App Theme Lock</div>
+              <div className="settings-row-label">App Theme</div>
               <div className="settings-row-sub">
                 {settings.theme === 'auto'
-                  ? `Auto-locked to ${effectiveTheme === 'day' ? 'Day' : 'Night'} theme based on actual solar conditions at ${locationName ?? 'viewing location'}`
-                  : settings.theme === 'day' || settings.theme === 'light'
-                  ? 'Locked into Day theme across all views'
-                  : 'Locked into Night theme across all views'}
+                  ? `Auto-adapts to ${effectiveTheme === 'light' ? 'Light' : 'Dark'} theme based on actual solar conditions at ${locationName ?? 'viewing location'}`
+                  : settings.theme === 'light' || settings.theme === 'day'
+                  ? 'Light appearance across all views'
+                  : 'Dark appearance across all views'}
               </div>
             </div>
             <div className="segmented-group">
@@ -3944,28 +4131,28 @@ function SettingsView({
                 type="button"
                 className={`segmented-btn ${settings.theme === 'auto' ? 'active' : ''}`}
                 onClick={() => setSettings((s) => ({ ...s, theme: 'auto' }))}
-                title="Automatically lock into Day or Night using actual local solar conditions"
+                title="Automatically adapt theme using actual local solar weather conditions"
               >
                 <Sparkles size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
                 Auto (Local Weather)
               </button>
               <button
                 type="button"
-                className={`segmented-btn ${settings.theme === 'day' || settings.theme === 'light' ? 'active' : ''}`}
-                onClick={() => setSettings((s) => ({ ...s, theme: 'day' }))}
-                title="Lock into Day theme"
+                className={`segmented-btn ${settings.theme === 'light' || settings.theme === 'day' ? 'active' : ''}`}
+                onClick={() => setSettings((s) => ({ ...s, theme: 'light' }))}
+                title="Light mode"
               >
                 <Sun size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
-                Day Lock
+                Light
               </button>
               <button
                 type="button"
-                className={`segmented-btn ${settings.theme === 'night' || settings.theme === 'dark' ? 'active' : ''}`}
-                onClick={() => setSettings((s) => ({ ...s, theme: 'night' }))}
-                title="Lock into Night theme"
+                className={`segmented-btn ${settings.theme === 'dark' || settings.theme === 'night' ? 'active' : ''}`}
+                onClick={() => setSettings((s) => ({ ...s, theme: 'dark' }))}
+                title="Dark mode"
               >
                 <Moon size={13} style={{ display: 'inline', marginRight: 5, verticalAlign: 'middle' }} />
-                Night Lock
+                Dark
               </button>
             </div>
           </div>
@@ -4018,7 +4205,7 @@ function SettingsView({
       {/* Atmospheric Soundscape & Audio Settings */}
       <AtmosphericSoundscapeSettings
         weatherCode={weatherCode}
-        isDay={effectiveTheme === 'day'}
+        isDay={effectiveTheme === 'light'}
         windSpeedKmh={windSpeedKmh}
       />
 
@@ -5178,7 +5365,12 @@ function Router() {
     <RoutedErrorBoundary>
       <Switch>
         <Route path="/" component={Home} />
-        <Route component={NotFound} />
+        <Route path="/index.html" component={Home} />
+        <Route path="/today" component={Home} />
+        <Route path="/forecast" component={Home} />
+        <Route path="/air-quality" component={Home} />
+        <Route path="/settings" component={Home} />
+        <Route component={Home} />
       </Switch>
     </RoutedErrorBoundary>
   );

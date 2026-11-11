@@ -16,5 +16,6 @@ export interface WeatherInsightInput {
   current: WeatherInsightInputCurrent;
   airQuality: WeatherInsightInputAirQuality;
   upcoming: WeatherInsightInputUpcomingItem[];
+  focus?: string;
   customActivity?: string;
 }

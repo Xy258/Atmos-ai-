@@ -257,8 +257,9 @@ export function AqiTrendChart({
 
   return (
     <div
-      className="rounded-2xl p-4 sm:p-6 bg-card border border-border shadow-sm text-card-foreground animate-rise"
+      className="aqi-trend-card rounded-2xl p-4 sm:p-6 bg-card border border-border shadow-sm text-card-foreground animate-rise outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus:border-border select-none"
       data-testid="container-aqi-trend-chart"
+      style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
     >
       {/* Header with Title and Quick Spike/Improvement Diagnostic Pill */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
@@ -371,11 +372,12 @@ export function AqiTrendChart({
       </div>
 
       {/* Recharts Line Chart Container */}
-      <div className="w-full h-[240px] sm:h-[270px]">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="w-full h-[240px] sm:h-[270px] outline-none focus:outline-none" style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}>
+        <ResponsiveContainer width="100%" height="100%" style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}>
           <LineChart
             data={chartData}
             margin={{ top: 12, right: 18, left: -14, bottom: 0 }}
+            style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
           >
             <defs>
               <linearGradient id="aqiLineGradient" x1="0" y1="0" x2="1" y2="0">
