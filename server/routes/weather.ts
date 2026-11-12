@@ -613,6 +613,46 @@ Use Celsius, km/h, and plain language. Do not mention being an AI.`;
   res.json(fallback);
 });
 
+router.get("/weather/ip-location", async (req, res) => {
+  const cleanCountry = (name?: string) => {
+    if (!name) return "";
+    return name
+      .replace(/\s*\(the\)$/i, "")
+      .replace(/^United States of America$/i, "United States")
+      .replace(/^United Kingdom of Great Britain and Northern Ireland$/i, "United Kingdom")
+      .trim();
+  };
+
+  try {
+    const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const ipStr = typeof clientIp === "string" ? clientIp.split(",")[0].trim() : "";
+    const url =
+      ipStr && ipStr !== "127.0.0.1" && ipStr !== "::1" && !ipStr.startsWith("192.168.")
+        ? `https://ipwho.is/${ipStr}`
+        : "https://ipwho.is/";
+
+    const ipRes = await fetch(url, { headers: { "User-Agent": "AtmosWeather/1.0" } });
+    if (ipRes.ok) {
+      const data = await ipRes.json();
+      if (data?.success !== false && data?.city && data?.latitude && data?.longitude) {
+        res.json({
+          id: Math.round(Math.abs(data.latitude * 10000 + data.longitude * 100)),
+          city: data.city,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          country: cleanCountry(data.country),
+          region: data.region || "",
+        });
+        return;
+      }
+    }
+  } catch (err) {
+    logger.info("[Atmos] IP location detection bypassed");
+  }
+
+  res.status(503).json({ error: "Could not resolve IP location" });
+});
+
 router.get("/weather/reverse-geocode", async (req, res) => {
   const lat = Number(req.query.latitude ?? req.query.lat);
   const lon = Number(req.query.longitude ?? req.query.lon);
@@ -632,29 +672,32 @@ router.get("/weather/reverse-geocode", async (req, res) => {
       .trim();
   };
 
-  // 1. Try BigDataCloud Client Reverse Geocode
+  // 1. Try Photon Komoot (OpenStreetMap global data, ultra-fast and reliable on cloud hosts)
   try {
-    const bdcRes = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`
-    );
-    if (bdcRes.ok) {
-      const data = (await bdcRes.json()) as {
-        city?: string;
-        locality?: string;
-        principalSubdivision?: string;
-        countryName?: string;
-      };
-      const cityName = data.city || data.locality || data.principalSubdivision;
-      if (cityName) {
-        res.json({
-          id: Math.round(Math.abs(lat * 10000 + lon * 100)),
-          name: cityName,
-          latitude: lat,
-          longitude: lon,
-          country: cleanCountry(data.countryName),
-          admin1: data.principalSubdivision || "",
-        });
-        return;
+    const photonRes = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}`);
+    if (photonRes.ok) {
+      const data = await photonRes.json();
+      const props = data?.features?.[0]?.properties;
+      if (props) {
+        const cityName =
+          props.city ||
+          props.town ||
+          props.village ||
+          props.county ||
+          props.district ||
+          props.locality ||
+          props.name;
+        if (cityName) {
+          res.json({
+            id: Math.round(Math.abs(lat * 10000 + lon * 100)),
+            name: cityName,
+            latitude: lat,
+            longitude: lon,
+            country: cleanCountry(props.country),
+            admin1: props.state || "",
+          });
+          return;
+        }
       }
     }
   } catch {
@@ -665,7 +708,7 @@ router.get("/weather/reverse-geocode", async (req, res) => {
   try {
     const nomRes = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
-      { headers: { "User-Agent": "AtmosWeatherApp/1.0" } }
+      { headers: { "User-Agent": "AtmosWeatherApp/1.0", Accept: "application/json" } }
     );
     if (nomRes.ok) {
       const data = (await nomRes.json()) as {
@@ -675,6 +718,7 @@ router.get("/weather/reverse-geocode", async (req, res) => {
           village?: string;
           municipality?: string;
           county?: string;
+          state_district?: string;
           state?: string;
           country?: string;
         };
@@ -686,6 +730,7 @@ router.get("/weather/reverse-geocode", async (req, res) => {
         addr?.village ||
         addr?.municipality ||
         addr?.county ||
+        addr?.state_district ||
         addr?.state;
       if (cityName) {
         res.json({
@@ -706,7 +751,7 @@ router.get("/weather/reverse-geocode", async (req, res) => {
   // 3. Fallback to coordinates
   res.json({
     id: Math.round(Math.abs(lat * 10000 + lon * 100)),
-    name: "Detected City",
+    name: "Detected Location",
     latitude: lat,
     longitude: lon,
     country: "",

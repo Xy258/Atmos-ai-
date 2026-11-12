@@ -1101,6 +1101,64 @@ function cleanCountryName(name?: string): string {
     .trim();
 }
 
+async function detectLocationByIp(): Promise<Location | null> {
+  // 1. Try our backend ip-location endpoint
+  try {
+    const res = await fetch('/api/weather/ip-location');
+    if (res.ok) {
+      const data = (await res.json()) as {
+        id?: number;
+        city?: string;
+        latitude?: number;
+        longitude?: number;
+        country?: string;
+        region?: string;
+      };
+      if (data?.city && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+        return {
+          id: data.id || Math.round(Math.abs(data.latitude * 10000 + data.longitude * 100)),
+          name: data.city,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          country: cleanCountryName(data.country),
+          admin1: data.region || '',
+        };
+      }
+    }
+  } catch {
+    // Continue to client-side fallback
+  }
+
+  // 2. Direct client-side ipwho.is (CORS enabled, highly accurate, free, fast)
+  try {
+    const res = await fetch('https://ipwho.is/');
+    if (res.ok) {
+      const data = (await res.json()) as {
+        success?: boolean;
+        city?: string;
+        latitude?: number;
+        longitude?: number;
+        country?: string;
+        region?: string;
+      };
+      if (data?.success !== false && data?.city && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+        return {
+          id: Math.round(Math.abs(data.latitude * 10000 + data.longitude * 100)),
+          name: data.city,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          country: cleanCountryName(data.country),
+          admin1: data.region || '',
+        };
+      }
+    }
+  } catch {
+    // Continue
+  }
+
+  return null;
+}
+
 async function reverseGeocodeCoordinates(latitude: number, longitude: number): Promise<Location> {
   const locationId = Math.round(Math.abs(latitude * 10000 + longitude * 100));
 
@@ -1114,7 +1172,12 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
         country?: string;
         admin1?: string;
       };
-      if (data?.name && data.name !== 'Detected City' && data.name !== 'My Location') {
+      if (
+        data?.name &&
+        data.name !== 'Detected City' &&
+        data.name !== 'Detected Location' &&
+        data.name !== 'My Location'
+      ) {
         return {
           id: data.id || locationId,
           name: data.name,
@@ -1129,7 +1192,97 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
     // Continue to client-side reverse geocoding
   }
 
-  // 2. Try BigDataCloud reverse geocode client
+  // 2. Try Photon Komoot (OpenStreetMap global data with full CORS support on Vercel)
+  try {
+    const photonRes = await fetch(
+      `https://photon.komoot.io/reverse?lat=${latitude}&lon=${longitude}`
+    );
+    if (photonRes.ok) {
+      const data = (await photonRes.json()) as {
+        features?: Array<{
+          properties?: {
+            city?: string;
+            town?: string;
+            village?: string;
+            county?: string;
+            district?: string;
+            locality?: string;
+            state?: string;
+            country?: string;
+            name?: string;
+          };
+        }>;
+      };
+      const props = data?.features?.[0]?.properties;
+      if (props) {
+        const cityName =
+          props.city ||
+          props.town ||
+          props.village ||
+          props.county ||
+          props.district ||
+          props.locality ||
+          props.name;
+        if (cityName) {
+          return {
+            id: locationId,
+            name: cityName,
+            latitude,
+            longitude,
+            country: cleanCountryName(props.country),
+            admin1: props.state || '',
+          };
+        }
+      }
+    }
+  } catch {
+    // Continue to Nominatim fallback
+  }
+
+  // 3. Try OpenStreetMap Nominatim reverse geocode
+  try {
+    const nomRes = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (nomRes.ok) {
+      const data = (await nomRes.json()) as {
+        address?: {
+          city?: string;
+          town?: string;
+          village?: string;
+          municipality?: string;
+          county?: string;
+          state_district?: string;
+          state?: string;
+          country?: string;
+        };
+      };
+      const addr = data.address;
+      const cityName =
+        addr?.city ||
+        addr?.town ||
+        addr?.village ||
+        addr?.municipality ||
+        addr?.county ||
+        addr?.state_district ||
+        addr?.state;
+      if (cityName) {
+        return {
+          id: locationId,
+          name: cityName,
+          latitude,
+          longitude,
+          country: cleanCountryName(addr?.country),
+          admin1: addr?.state || '',
+        };
+      }
+    }
+  } catch {
+    // Continue to fallback
+  }
+
+  // 4. Try BigDataCloud reverse geocode client
   try {
     const bdcRes = await fetch(
       `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
@@ -1150,47 +1303,6 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
           longitude,
           country: cleanCountryName(data.countryName),
           admin1: data.principalSubdivision || '',
-        };
-      }
-    }
-  } catch {
-    // Continue to Nominatim fallback
-  }
-
-  // 3. Try OpenStreetMap Nominatim reverse geocode
-  try {
-    const nomRes = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
-      { headers: { 'User-Agent': 'AtmosWeather/1.0' } }
-    );
-    if (nomRes.ok) {
-      const data = (await nomRes.json()) as {
-        address?: {
-          city?: string;
-          town?: string;
-          village?: string;
-          municipality?: string;
-          county?: string;
-          state?: string;
-          country?: string;
-        };
-      };
-      const addr = data.address;
-      const cityName =
-        addr?.city ||
-        addr?.town ||
-        addr?.village ||
-        addr?.municipality ||
-        addr?.county ||
-        addr?.state;
-      if (cityName) {
-        return {
-          id: locationId,
-          name: cityName,
-          latitude,
-          longitude,
-          country: cleanCountryName(addr?.country),
-          admin1: addr?.state || '',
         };
       }
     }
@@ -1539,12 +1651,14 @@ function Home() {
     };
   }, [query]);
 
-  const pickLocation = (next: Location) => {
+  const pickLocation = (next: Location, skipToast = false) => {
     setQuery('');
     setResults([]);
     setLocation(next);
     setActiveTab('Today');
-    showToast(`Switched location to ${next.name}`);
+    if (!skipToast) {
+      showToast(`Switched location to ${next.name}`);
+    }
   };
 
   const addSavedLocation = (loc: Location) => {
@@ -1561,44 +1675,111 @@ function Home() {
     showToast(`Removed ${name} from saved locations`);
   };
 
-  const useCurrentLocation = () => {
+  const useCurrentLocation = (isInitialAutoDetect?: boolean | React.SyntheticEvent) => {
+    const isAuto = isInitialAutoDetect === true;
+
     if (!navigator.geolocation) {
-      setPermission('denied');
-      showToast('Geolocation is not supported by your browser');
+      void detectLocationByIp().then((ipLoc) => {
+        if (ipLoc) {
+          pickLocation(ipLoc, isAuto);
+        } else if (!isAuto) {
+          setPermission('denied');
+          showToast('Geolocation is not supported by your browser');
+        }
+      });
       return;
     }
-    setPermission('requesting');
-    showToast('Detecting your city location...');
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude, altitude } = position.coords;
-        try {
-          const resolvedLocation = await reverseGeocodeCoordinates(latitude, longitude);
-          if (altitude !== null && altitude !== undefined && resolvedLocation.elevation == null) {
-            resolvedLocation.elevation = Math.round(altitude);
+    setPermission('requesting');
+    if (!isAuto) {
+      showToast('Detecting your city location...');
+    }
+
+    const requestPosition = (highAccuracy: boolean) => {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude, altitude } = position.coords;
+          try {
+            const resolvedLocation = await reverseGeocodeCoordinates(latitude, longitude);
+            if (altitude !== null && altitude !== undefined && resolvedLocation.elevation == null) {
+              resolvedLocation.elevation = Math.round(altitude);
+            }
+            pickLocation(resolvedLocation, isAuto);
+            if (!isAuto) {
+              showToast(`Location set to ${resolvedLocation.name}`);
+            }
+          } catch {
+            pickLocation(
+              {
+                id: Math.round(Math.abs(latitude * 10000 + longitude * 100)),
+                name: 'Detected Location',
+                latitude,
+                longitude,
+                elevation: altitude !== null && altitude !== undefined ? Math.round(altitude) : undefined,
+              },
+              isAuto
+            );
+          } finally {
+            setPermission('idle');
           }
-          pickLocation(resolvedLocation);
-        } catch {
-          // Fallback if network fails
-          pickLocation({
-            id: Math.round(Math.abs(latitude * 10000 + longitude * 100)),
-            name: 'Detected Location',
-            latitude,
-            longitude,
-            elevation: altitude !== null && altitude !== undefined ? Math.round(altitude) : undefined,
-          });
-        } finally {
-          setPermission('idle');
+        },
+        async (err) => {
+          // If high accuracy timed out (e.g. desktop/laptop without GPS chip), retry with standard accuracy (Wi-Fi/cell)
+          if (highAccuracy && err.code === err.TIMEOUT) {
+            requestPosition(false);
+            return;
+          }
+          // If browser GPS is denied or unavailable, fall back smoothly to IP-based city detection!
+          const ipLoc = await detectLocationByIp();
+          if (ipLoc) {
+            pickLocation(ipLoc, isAuto);
+            setPermission('idle');
+          } else {
+            setPermission('denied');
+            if (!isAuto) {
+              showToast('Location permission was denied');
+            }
+          }
+        },
+        {
+          timeout: highAccuracy ? 5000 : 10000,
+          enableHighAccuracy: highAccuracy,
+          maximumAge: 300000,
         }
-      },
-      () => {
-        setPermission('denied');
-        showToast('Location permission was denied');
-      },
-      { timeout: 9000, enableHighAccuracy: true }
-    );
+      );
+    };
+
+    requestPosition(true);
   };
+
+  // Auto-detect current location on first visit if no stored location exists in localStorage
+  useEffect(() => {
+    const hasStoredLocation = Boolean(localStorage.getItem('atmos_current_location'));
+    if (!hasStoredLocation) {
+      if (typeof navigator !== 'undefined' && navigator.permissions && navigator.permissions.query) {
+        navigator.permissions
+          .query({ name: 'geolocation' as PermissionName })
+          .then((perm) => {
+            if (perm.state === 'granted') {
+              useCurrentLocation(true);
+            } else {
+              void detectLocationByIp().then((ipLoc) => {
+                if (ipLoc) pickLocation(ipLoc, true);
+              });
+            }
+          })
+          .catch(() => {
+            void detectLocationByIp().then((ipLoc) => {
+              if (ipLoc) pickLocation(ipLoc, true);
+            });
+          });
+      } else {
+        void detectLocationByIp().then((ipLoc) => {
+          if (ipLoc) pickLocation(ipLoc, true);
+        });
+      }
+    }
+  }, []);
 
   const hourlyStart = useMemo(() => {
     if (!forecast) return 0;
