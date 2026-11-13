@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { GoogleGenAI } from "@google/genai";
-import { logger } from "../lib/logger";
+import { logger } from "../lib/logger.ts";
 import {
   GenerateWeatherInsightBody,
   GenerateWeatherInsightResponse,
   GenerateLifestyleAdviceResponse as LifestyleAdvice,
-} from "@workspace/api-zod";
+} from "../api-zod/index.ts";
 
 const router: IRouter = Router();
 
@@ -205,73 +205,101 @@ function generateAlgorithmicInsight(data: {
   }
 
   // 3. Focus-tailored headline, summary, and recommendations
+  const highTemp = upcoming[0] ? Math.round(upcoming[0].high) : temp + 3;
+  const lowTemp = upcoming[0] ? Math.round(upcoming[0].low) : temp - 4;
+  const diurnalSwing = Math.max(0, highTemp - lowTemp);
+  const dewPoint = Math.round(temp - (100 - current.humidity) / 5);
+  const pm25 = Math.round(airQuality.pm2_5 * 10) / 10;
+  const nextRainDay = upcoming.find((d) => d.precipitationProbability >= 45);
+  const upcomingTrend =
+    upcoming.length >= 2
+      ? Math.round(upcoming[1].high) > highTemp + 2
+        ? `Expect warming toward ${Math.round(upcoming[1].high)}°C tomorrow.`
+        : Math.round(upcoming[1].high) < highTemp - 2
+        ? `Cooler air arrives tomorrow with highs near ${Math.round(upcoming[1].high)}°C.`
+        : `Temperatures remain steady near ${Math.round(upcoming[1].high)}°C tomorrow.`
+      : "";
+
   let headline = "Pleasant and balanced conditions ahead";
-  let summary = `Currently ${temp}°C (feels like ${feelsLike}°C) with ${current.humidity}% humidity and ${wind} km/h winds in ${data.location}.`;
+  let summary = `Currently ${temp}°C (feels like ${feelsLike}°C) with ${Math.round(current.humidity)}% humidity, ${wind} km/h winds, and ${rain}% precipitation chance in ${data.location}. Expect a ${lowTemp}°C to ${highTemp}°C diurnal range today (${diurnalSwing}°C swing). ${upcomingTrend}`.trim();
   let recommendations: string[] = [];
 
   if (focus === 'health' || focus === 'wellness') {
     headline = uv >= 8 ? "High UV Radiation: Sun Protection Essential" : aqi > 100 ? "Sensitive Air Quality Advisory" : "Optimal Bioclimatic Wellness Index";
-    summary = `Physiological telemetry for ${data.location} reports UV Index ${uv}, AQI ${aqi}, and thermal comfort near ${feelsLike}°C. Prioritize skin barriers and hydration.`;
+    summary = `Physiological telemetry for ${data.location} reports UV Index ${uv}, US AQI ${aqi} (PM2.5 ${pm25} µg/m³), and apparent thermal strain near ${feelsLike}°C with ${Math.round(current.humidity)}% humidity. Dew point sits near ${dewPoint}°C across a ${lowTemp}°C–${highTemp}°C daily temperature span.`;
     recommendations = [
       uv >= 3
-        ? (uv >= 8 ? "UV 8+ warning: seek shade between 10am-4pm and reapply broad-spectrum SPF 50+ every 2 hours." : "UV 3+ active: apply SPF 30+ sunscreen before outdoor exposure.")
-        : "Low UV index allows comfortable daytime light exposure without sunburn danger.",
+        ? (uv >= 8 ? `UV ${uv} warning: seek shade between 10am–4pm, wear UV400 eyewear, and reapply broad-spectrum SPF 50+ every 2 hours.` : `UV ${uv} active: apply SPF 30+ sunscreen 15 minutes before midday outdoor exposure.`)
+        : `Low UV (${uv}) permits comfortable daytime outdoor light exposure with minimal burn risk.`,
       aqi > 100
-        ? "Air quality is elevated; pace aerobic exertion and consider an indoor workout."
-        : "Air quality is pristine; excellent for lung volume expansion and outdoor walking.",
+        ? `Air quality is elevated (AQI ${aqi}, PM2.5 ${pm25} µg/m³); pace aerobic exertion and consider indoor filtered training.`
+        : `Air quality is favorable (AQI ${aqi}, PM2.5 ${pm25} µg/m³); supportive of deep respiratory capacity and outdoor walking.`,
       feelsLike >= 28
-        ? "Hydration protocol: drink 350ml cool water every 45 min of outdoor exposure."
+        ? `Hydration protocol: ${feelsLike}°C thermal load increases fluid loss—drink 350ml cool water every 45 minutes outdoors.`
         : feelsLike <= 5
-        ? "Cold air constricts peripheral blood vessels; wear thermal layers to conserve core temperature."
-        : "Thermal equilibrium is balanced; standard hydration and clothing apply.",
+        ? `Cold air (${feelsLike}°C feels-like) constricts peripheral circulation; wear insulated thermal layers to preserve core warmth.`
+        : `Balanced thermal load (${temp}°C, feels ${feelsLike}°C) with ${Math.round(current.humidity)}% RH supports steady comfort and normal hydration.`,
       weatherHealthTip,
     ];
   } else if (focus === 'commute') {
     headline = rain > 40 ? "Commuter Weather: Wet Road Hazards" : wind > 28 ? "Commuter Weather: Gusty Transit Advisory" : "Commuter Weather: Clear Route Conditions";
-    summary = `Transit conditions in ${data.location} indicate ${rain > 40 ? 'wet pavement, spray hazards, and reduced braking distances' : 'clean sightlines and standard road flow'}.`;
+    summary = `Transit conditions in ${data.location} show ${rain}% precipitation probability, ${wind} km/h surface winds, and ${temp}°C air temperature (${lowTemp}°C–${highTemp}°C range). ${rain > 40 ? 'Wet pavement, spray plumes, and longer braking distances are likely.' : 'Sightlines and road friction remain favorable across main corridors.'}`;
     recommendations = [
       rain > 40
-        ? "Allow 5-10 extra minutes for road travel and wet pavement braking distances."
-        : "Roadways and rail corridors are dry with standard travel times expected.",
+        ? `High rain risk (${rain}%): allow 5–10 extra minutes for wet-road braking distances and reduced visibility.`
+        : `Low rain chance (${rain}%): dry roadway and rail corridors support normal commuter transit times.`,
       wind > 28
-        ? "Expect cross-wind gusts on bridges, elevated highway flyovers, and bike paths."
-        : "Light winds provide stable handling for cycling and two-wheeled transit.",
-      uv >= 6 ? "Carry UV-rated driving sunglasses to mitigate low-angle sun glare." : "Pack an umbrella or light windbreaker for transitional evening conditions.",
+        ? `Crosswind alert (${wind} km/h): expect lateral gusts on bridges, elevated flyovers, and exposed cycling lanes.`
+        : `Light ${wind} km/h winds ensure stable handling for cycling, motorcycles, and highway transit.`,
+      uv >= 6
+        ? `Elevated solar glare (UV ${uv}): keep polarized driving sunglasses handy during morning and afternoon glare windows.`
+        : nextRainDay
+        ? `Keep compact rain gear ready; next higher shower probability (${nextRainDay.precipitationProbability}%) arrives ${nextRainDay.date}.`
+        : `Carry a light outer layer for the ${diurnalSwing}°C swing between ${lowTemp}°C morning lows and ${highTemp}°C afternoon highs.`,
       weatherHealthTip,
     ];
   } else if (focus === 'outdoor' || focus === 'runner') {
     headline = "Athletics & Runner's Performance Index";
-    summary = `Cardiorespiratory conditions for ${data.location}: thermal strain is ${temp > 28 ? 'elevated' : 'moderate'} with AQI ${aqi} and ${rain}% precipitation chance.`;
+    summary = `Cardiorespiratory conditions in ${data.location}: ${temp}°C (${feelsLike}°C feels-like), US AQI ${aqi} (PM2.5 ${pm25} µg/m³), ${Math.round(current.humidity)}% RH, and ${wind} km/h wind. ${temp > 28 ? 'Heat dissipation requires early or late pacing.' : 'Aerodynamic drag and thermal load are well-balanced for training.'}`;
     recommendations = [
       temp > 28
-        ? "Schedule long runs for early dawn or dusk to avoid thermal accumulation."
-        : "Workout windows are favorable throughout late morning and afternoon.",
+        ? `Peak temperatures near ${highTemp}°C raise core strain; schedule tempo or long runs before 8am or after sunset.`
+        : `Optimal workout conditions (${temp}°C, dew point ${dewPoint}°C) across morning and late-afternoon sessions.`,
       aqi <= 50
-        ? "Particulate density is low: ideal for high VO2 max interval training."
-        : "Pace threshold efforts carefully to minimize reactive airway stress.",
-      uv >= 3 ? "Wear sweat-resistant SPF 30+ sunscreen and sport-polarized lenses." : "Standard athletic gear suitable for current cloud cover.",
+        ? `Clean air (AQI ${aqi}, PM2.5 ${pm25} µg/m³) supports peak VO2 max intervals and outdoor endurance blocks.`
+        : `Moderate/elevated particulates (AQI ${aqi}, PM2.5 ${pm25} µg/m³); monitor breathing cadence during high-intensity efforts.`,
+      uv >= 3
+        ? `UV Index ${uv}: wear sweat-resistant SPF 30+ sunscreen, breathable moisture-wicking fabric, and sport sunglasses.`
+        : `Mild UV (${uv}) and ${wind} km/h wind offer low solar strain—stay hydrated with 500ml water per 45 min of exercise.`,
       weatherHealthTip,
     ];
   } else if (focus === 'detailed') {
     headline = "Meteorological Deep Dive & Synoptic Dynamics";
-    summary = `Surface observations in ${data.location}: ${temp}°C (${feelsLike}°C apparent) at ${current.humidity}% RH with boundary wind at ${wind} km/h.`;
-    const dewPointEstimate = Math.round(temp - ((100 - current.humidity) / 5));
+    summary = `Surface observations in ${data.location}: ${temp}°C (${feelsLike}°C apparent), ${Math.round(current.humidity)}% RH, estimated dew point ${dewPoint}°C, and ${wind} km/h boundary wind. Diurnal range spans ${lowTemp}°C to ${highTemp}°C with ${rain}% precipitation probability and PM2.5 at ${pm25} µg/m³.`;
     recommendations = [
-      `Dew point spread estimated at ${dewPointEstimate}°C with ${current.humidity}% relative humidity (${current.humidity > 75 ? 'high condensation probability' : 'moderate air column moisture'}).`,
-      rain > 30 ? "Barometric moisture convergence indicates convective showers." : "Stable localized air mass with laminar horizontal wind flow.",
-      upcoming.length > 0 ? `Diurnal outlook: maximums near ${Math.round(upcoming[0].high)}°C, minimums near ${Math.round(upcoming[0].low)}°C.` : "Steady diurnal oscillation expected.",
+      `Thermodynamic profile: ${temp - dewPoint}°C dew-point spread at ${Math.round(current.humidity)}% RH indicates ${current.humidity > 75 ? 'high boundary-layer moisture and elevated condensation/haze potential' : 'well-mixed air column moisture with comfortable evaporative cooling'}.`,
+      rain > 30
+        ? `Convective forcing: ${rain}% precipitation chance signals moisture convergence and passing shower cells.`
+        : `Boundary-layer flow: steady ${wind} km/h horizontal winds with low (${rain}%) convective rainfall potential.`,
+      `Diurnal & aerosol telemetry: ${diurnalSwing}°C daily range (${lowTemp}°C–${highTemp}°C), UV ${uv}, and PM2.5 ${pm25} µg/m³ (US AQI ${aqi}). ${upcomingTrend}`,
       weatherHealthTip,
     ];
   } else {
     // General Daily Focus
     headline = rain > 50 ? "Showers Expected: Keep Rainwear Handy" : temp >= 28 ? "Warm & Bright: Stay Cool Outdoors" : temp <= 5 ? "Crisp & Cold: Layer Up Today" : "Pleasant & Balanced Atmospheric Outlook";
-    summary = `Currently ${temp}°C (feels like ${feelsLike}°C) with ${current.humidity}% humidity and ${wind} km/h winds in ${data.location}.`;
+    summary = `Currently ${temp}°C (feels like ${feelsLike}°C) in ${data.location} with ${Math.round(current.humidity)}% humidity, ${wind} km/h winds, and ${rain}% rain chance. Expect a ${lowTemp}°C to ${highTemp}°C temperature range today with US AQI ${aqi}. ${upcomingTrend}`.trim();
     recommendations = [
       uv >= 3
-        ? (uv >= 8 ? "UV 8+: Seek shade between 10am-4pm and reapply broad-spectrum SPF sunscreen regularly." : "UV 3+: Recommend applying SPF 30+ sunscreen during peak midday hours.")
-        : "Low UV exposure allows comfortable outdoor daytime strolls.",
-      rain > 30 ? "Keep an umbrella or water-resistant jacket handy for intermittent showers." : "Minimal precipitation threat throughout the day.",
-      aqi > 100 ? "Air quality is sensitive; consider lighter outdoor intensity." : "Air quality is clean and refreshing for standard daily activities.",
+        ? (uv >= 8 ? `UV ${uv} (Very High): seek shade between 10am–4pm, wear UV-blocking sunglasses, and reapply SPF 50+ sunscreen.` : `UV ${uv} (Moderate/High): apply SPF 30+ sunscreen and wear protective eyewear during peak midday hours.`)
+        : `Thermal layering: ${diurnalSwing}°C daily swing (${lowTemp}°C low to ${highTemp}°C high) at ${Math.round(current.humidity)}% humidity calls for light breathable layers.`,
+      rain > 30
+        ? `Precipitation outlook (${rain}%): pack an umbrella or water-resistant shell for passing showers.`
+        : nextRainDay
+        ? `Dry skies today (${rain}% rain chance); next notable shower probability (${nextRainDay.precipitationProbability}%) is forecast for ${nextRainDay.date}.`
+        : `Dry atmospheric column (${rain}% rain chance, ${wind} km/h wind) keeps outdoor errands smooth all day.`,
+      aqi > 100
+        ? `Air quality is sensitive (AQI ${aqi}, PM2.5 ${pm25} µg/m³); keep strenuous outdoor activity measured.`
+        : `Air quality is healthy (AQI ${aqi}, PM2.5 ${pm25} µg/m³) with clear breathing comfort across ${data.location}.`,
       weatherHealthTip,
     ];
   }

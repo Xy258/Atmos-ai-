@@ -5,9 +5,9 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { WeatherInsightInputAirQuality } from './weatherInsightInputAirQuality';
-import type { WeatherInsightInputCurrent } from './weatherInsightInputCurrent';
-import type { WeatherInsightInputUpcomingItem } from './weatherInsightInputUpcomingItem';
+import type { WeatherInsightInputAirQuality } from './weatherInsightInputAirQuality.ts';
+import type { WeatherInsightInputCurrent } from './weatherInsightInputCurrent.ts';
+import type { WeatherInsightInputUpcomingItem } from './weatherInsightInputUpcomingItem.ts';
 
 export interface WeatherInsightInput {
   /** @minLength 1 */

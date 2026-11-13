@@ -2407,6 +2407,31 @@ svg.recharts-surface:active {
   50% { transform: translateX(15%); opacity: 0.6; }
   100% { transform: translateX(-15%); opacity: 0.3; }
 }
+@keyframes atmosSunraySpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes atmosAuroraDrift {
+  0% { transform: translateX(-6%) scaleY(0.96); opacity: 0.28; }
+  50% { transform: translateX(6%) scaleY(1.06); opacity: 0.44; }
+  100% { transform: translateX(-6%) scaleY(0.96); opacity: 0.28; }
+}
+@keyframes atmosMistDrift {
+  0% { transform: translateX(-12%); opacity: 0.55; }
+  50% { transform: translateX(12%); opacity: 0.85; }
+  100% { transform: translateX(-12%); opacity: 0.55; }
+}
+.atmos-sunray-spin { animation: atmosSunraySpin 140s linear infinite; will-change: transform; }
+.atmos-aurora-drift { animation: atmosAuroraDrift 18s ease-in-out infinite; will-change: transform, opacity; }
+.atmos-mist-drift { animation: atmosMistDrift 14s ease-in-out infinite; will-change: transform, opacity; }
+@media (prefers-reduced-motion: reduce) {
+  .atmos-sunray-spin,
+  .atmos-aurora-drift,
+  .atmos-mist-drift,
+  .atmospheric-glow-halo {
+    animation: none !important;
+  }
+}
 .animate-rise { animation:rise .45s ease both; }
 @media (max-width: 1200px) and (min-width: 881px) {
   .data-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }

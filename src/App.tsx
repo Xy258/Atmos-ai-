@@ -15,6 +15,8 @@ import {
   getLastSyncStatus,
   type SyncStatus,
 } from '@/services/periodicSync';
+import { cleanCityOrVillageName, cleanCountryName } from '@/lib/locationUtils';
+export { cleanCityOrVillageName, cleanCountryName };
 import { UvIndexMiniChart } from '@/components/UvIndexMiniChart';
 import { WindRoseVisualization } from '@/components/WindRoseVisualization';
 import { RainParticleOverlay, isRainOrShowers } from '@/components/RainParticleOverlay';
@@ -398,15 +400,22 @@ const WEATHER_TEXT: Record<number, string> = {
   51: 'Light drizzle',
   53: 'Drizzle',
   55: 'Heavy drizzle',
+  56: 'Freezing drizzle',
+  57: 'Dense freezing drizzle',
   61: 'Light rain',
   63: 'Rain',
   65: 'Heavy rain',
+  66: 'Freezing rain',
+  67: 'Heavy freezing rain',
   71: 'Light snow',
   73: 'Snow',
   75: 'Heavy snow',
+  77: 'Snow grains',
   80: 'Rain showers',
   81: 'Showers',
   82: 'Heavy showers',
+  85: 'Snow showers',
+  86: 'Heavy snow showers',
   95: 'Thunderstorm',
   96: 'Storm with hail',
   99: 'Heavy thunderstorm',
@@ -419,9 +428,9 @@ function weatherIcon(code: number, isDay = true) {
   if (code === 1 || code === 2) return CloudSun;
   if (code === 3) return Cloud;
   if ([45, 48].includes(code)) return CloudFog;
-  if ([51, 53, 55].includes(code)) return CloudDrizzle;
-  if ([61, 63, 65, 80, 81, 82].includes(code)) return CloudRain;
-  if ([71, 73, 75].includes(code)) return CloudSnow;
+  if ([51, 53, 55, 56, 57].includes(code)) return CloudDrizzle;
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return CloudRain;
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return CloudSnow;
   if ([95, 96, 99].includes(code)) return CloudLightning;
   return Cloud;
 }
@@ -443,8 +452,8 @@ export function getWeatherArchetype(code: number, isDay = true): WeatherArchetyp
   if (code === 1 || code === 2) return 'partly-cloudy';
   if (code === 3) return 'cloud';
   if ([45, 48].includes(code)) return 'fog';
-  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return 'rain';
-  if ([71, 73, 75].includes(code)) return 'snow';
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return 'rain';
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'snow';
   if ([95, 96, 99].includes(code)) return 'thunderstorm';
   return 'cloud';
 }
@@ -723,6 +732,22 @@ export function getAtmosphericTheme(code: number, isDay = true): AtmosphericThem
     };
   }
 
+  // 1b. Freezing Drizzle / Freezing Rain / Sleet (56, 57, 66, 67) -> Icy slate cyan & frost
+  if ([56, 57, 66, 67].includes(code)) {
+    return {
+      id: 'sleet',
+      conditionText,
+      bgGradient: 'linear-gradient(135deg, #164e63 0%, #1e3a5f 48%, #0f2942 100%)',
+      haloGradient: 'radial-gradient(circle, rgba(186, 230, 253, 0.92) 0%, rgba(56, 189, 248, 0.42) 40%, transparent 75%)',
+      glowColor: 'rgba(186, 230, 253, 0.85)',
+      glowSpread: '0 0 44px rgba(56, 189, 248, 0.38)',
+      iconColor: '#bae6fd',
+      accentColor: '#7dd3fc',
+      ringColor: 'rgba(186, 230, 253, 0.16)',
+      timePhase: isDay ? 'Daylight' : 'Night time',
+    };
+  }
+
   // 2. Heavy Rain / Showers (63, 65, 81, 82) -> Atmospheric dark stormy ocean
   if ([63, 65, 81, 82].includes(code)) {
     return {
@@ -755,8 +780,8 @@ export function getAtmosphericTheme(code: number, isDay = true): AtmosphericThem
     };
   }
 
-  // 4. Snow / Sleet (71, 73, 75) -> Glacial alpine cyan/frost
-  if ([71, 73, 75].includes(code)) {
+  // 4. Snow / Sleet / Snow Showers (71, 73, 75, 77, 85, 86) -> Glacial alpine cyan/frost
+  if ([71, 73, 75, 77, 85, 86].includes(code)) {
     return {
       id: 'snow',
       conditionText,
@@ -881,8 +906,8 @@ export function getAtmosphericAmbientGradient(code: number, isDay = true): strin
   if (!isDay && (code === 1 || code === 2)) {
     return 'radial-gradient(circle at 80% -5%, rgba(99, 102, 241, 0.16) 0%, rgba(56, 189, 248, 0.06) 38%, transparent 65%)';
   }
-  // Drizzle & Rain
-  if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) {
+  // Drizzle, Sleet & Rain
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
     return 'radial-gradient(circle at 80% -5%, rgba(20, 184, 166, 0.20) 0%, rgba(56, 189, 248, 0.08) 40%, transparent 65%)';
   }
   // Thunderstorm
@@ -890,7 +915,7 @@ export function getAtmosphericAmbientGradient(code: number, isDay = true): strin
     return 'radial-gradient(circle at 80% -5%, rgba(168, 85, 247, 0.22) 0%, rgba(129, 140, 248, 0.09) 40%, transparent 65%)';
   }
   // Snow
-  if ([71, 73, 75].includes(code)) {
+  if ([71, 73, 75, 77, 85, 86].includes(code)) {
     return 'radial-gradient(circle at 80% -5%, rgba(56, 189, 248, 0.20) 0%, rgba(186, 230, 253, 0.08) 40%, transparent 65%)';
   }
   // Overcast & Fog
@@ -906,14 +931,17 @@ export function AtmosphericGradientCrossfade({
 }) {
   return (
     <div className="atmospheric-card-bg-container pointer-events-none" aria-hidden="true">
-      <div
-        key={themeKey}
-        className="atmospheric-card-bg-layer"
-        style={{
-          background: gradient,
-          transition: 'background 0.85s ease',
-        }}
-      />
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={themeKey}
+          className="atmospheric-card-bg-layer"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.85, ease: [0.4, 0, 0.2, 1] }}
+          style={{ background: gradient }}
+        />
+      </AnimatePresence>
     </div>
   );
 }
@@ -1126,56 +1154,6 @@ async function getJson<T>(url: string, signal?: AbortSignal, skipCache = false):
   }
 }
 
-export function cleanCountryName(name?: string): string {
-  if (!name) return '';
-  return name
-    .replace(/\s*\(the\)$/i, '')
-    .replace(/^United States of America$/i, 'United States')
-    .replace(/^United Kingdom of Great Britain and Northern Ireland$/i, 'United Kingdom')
-    .trim();
-}
-
-/**
- * Strips 'taluk', 'taluka', 'tehsil', 'mandal', 'subdistrict' administrative suffixes
- * so only the clean city, town, or village name is displayed.
- */
-export function cleanCityOrVillageName(name?: string): string {
-  if (!name) return '';
-  let cleaned = name.trim();
-
-  if (cleaned.includes(',')) {
-    const parts = cleaned
-      .split(',')
-      .map((p) => p.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim())
-      .filter(Boolean);
-    if (parts.length > 0) {
-      cleaned = parts[0];
-    }
-  }
-
-  cleaned = cleaned.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim();
-  cleaned = cleaned.replace(/^[,\-\s/]+|[,\-\s/]+$/g, '').replace(/\s{2,}/g, ' ').trim();
-
-  return cleaned || name.trim();
-}
-
-export function cleanAdminName(name?: string): string {
-  if (!name) return '';
-  let cleaned = name.trim();
-  if (cleaned.includes(',')) {
-    const parts = cleaned
-      .split(',')
-      .map((p) => p.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim())
-      .filter(Boolean);
-    if (parts.length > 0) {
-      cleaned = parts[0];
-    }
-  }
-  cleaned = cleaned.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim();
-  cleaned = cleaned.replace(/^[,\-\s/]+|[,\-\s/]+$/g, '').replace(/\s{2,}/g, ' ').trim();
-  return cleaned;
-}
-
 async function detectLocationByIp(): Promise<Location | null> {
   // 1. Try our backend ip-location endpoint
   try {
@@ -1195,8 +1173,8 @@ async function detectLocationByIp(): Promise<Location | null> {
           name: cleanCityOrVillageName(data.city),
           latitude: data.latitude,
           longitude: data.longitude,
-          country: cleanCountryName(data.country),
-          admin1: cleanAdminName(data.region || ''),
+          country: cleanCityOrVillageName(cleanCountryName(data.country)),
+          admin1: cleanCityOrVillageName(data.region || ''),
         };
       }
     }
@@ -1222,8 +1200,8 @@ async function detectLocationByIp(): Promise<Location | null> {
           name: cleanCityOrVillageName(data.city),
           latitude: data.latitude,
           longitude: data.longitude,
-          country: cleanCountryName(data.country),
-          admin1: cleanAdminName(data.region || ''),
+          country: cleanCityOrVillageName(cleanCountryName(data.country)),
+          admin1: cleanCityOrVillageName(data.region || ''),
         };
       }
     }
@@ -1258,8 +1236,8 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
           name: cleanCityOrVillageName(data.name),
           latitude,
           longitude,
-          country: cleanCountryName(data.country),
-          admin1: cleanAdminName(data.admin1 || ''),
+          country: cleanCityOrVillageName(cleanCountryName(data.country)),
+          admin1: cleanCityOrVillageName(data.admin1 || ''),
         };
       }
     }
@@ -1323,8 +1301,8 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
             name: cityName,
             latitude,
             longitude,
-            country: cleanCountryName(props.country),
-            admin1: cleanAdminName(props.state || ''),
+            country: cleanCityOrVillageName(cleanCountryName(props.country)),
+            admin1: cleanCityOrVillageName(props.state || ''),
           };
         }
       }
@@ -1374,8 +1352,8 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
           name: cityName,
           latitude,
           longitude,
-          country: cleanCountryName(addr?.country),
-          admin1: cleanAdminName(addr?.state || ''),
+          country: cleanCityOrVillageName(cleanCountryName(addr?.country)),
+          admin1: cleanCityOrVillageName(addr?.state || ''),
         };
       }
     }
@@ -1403,8 +1381,8 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
           name: cityName,
           latitude,
           longitude,
-          country: cleanCountryName(data.countryName),
-          admin1: cleanAdminName(data.principalSubdivision || ''),
+          country: cleanCityOrVillageName(cleanCountryName(data.countryName)),
+          admin1: cleanCityOrVillageName(data.principalSubdivision || ''),
         };
       }
     }
@@ -1462,7 +1440,8 @@ function Home() {
             : {
                 ...item,
                 name: cleanCityOrVillageName(item.name),
-                admin1: item.admin1 ? cleanAdminName(item.admin1) : item.admin1,
+                admin1: item.admin1 ? cleanCityOrVillageName(item.admin1) : item.admin1,
+                country: item.country ? cleanCityOrVillageName(cleanCountryName(item.country)) : item.country,
               }
         );
       }
@@ -1490,7 +1469,8 @@ function Home() {
           return {
             ...parsed,
             name: cleanCityOrVillageName(parsed.name),
-            admin1: parsed.admin1 ? cleanAdminName(parsed.admin1) : parsed.admin1,
+            admin1: parsed.admin1 ? cleanCityOrVillageName(parsed.admin1) : parsed.admin1,
+            country: parsed.country ? cleanCityOrVillageName(cleanCountryName(parsed.country)) : parsed.country,
           };
         }
       }
@@ -1797,7 +1777,8 @@ function Home() {
     const cleanedNext: Location = {
       ...next,
       name: cleanCityOrVillageName(next.name),
-      admin1: next.admin1 ? cleanAdminName(next.admin1) : next.admin1,
+      admin1: next.admin1 ? cleanCityOrVillageName(next.admin1) : next.admin1,
+      country: next.country ? cleanCityOrVillageName(cleanCountryName(next.country)) : next.country,
     };
     setQuery('');
     setResults([]);
@@ -1812,7 +1793,8 @@ function Home() {
     const cleanedLoc: Location = {
       ...loc,
       name: cleanCityOrVillageName(loc.name),
-      admin1: loc.admin1 ? cleanAdminName(loc.admin1) : loc.admin1,
+      admin1: loc.admin1 ? cleanCityOrVillageName(loc.admin1) : loc.admin1,
+      country: loc.country ? cleanCityOrVillageName(cleanCountryName(loc.country)) : loc.country,
     };
     if (!savedList.some((item) => item.id === cleanedLoc.id || (item.name === cleanedLoc.name && item.country === cleanedLoc.country))) {
       setSavedList((prev) => [cleanedLoc, ...prev]);
@@ -1963,7 +1945,9 @@ function Home() {
       const focusToUse = overrideFocus || settings.briefingTone || 'general';
       insight.mutate({
         data: {
-          location: `${location.name}, ${location.country ?? ''}`,
+          location: `${cleanCityOrVillageName(location.name)}${
+            location.country ? `, ${cleanCityOrVillageName(cleanCountryName(location.country))}` : ''
+          }`,
           localTime: localLabel(forecast.timezone, settings.timeFormat),
           current: {
             temperature: current.temperature_2m,
@@ -2052,8 +2036,8 @@ function Home() {
                     >
                       {cleanCityOrVillageName(result.name)}
                       <small>
-                        {result.admin1 ? `${cleanAdminName(result.admin1)}, ` : ''}
-                        {result.country}
+                        {result.admin1 ? `${cleanCityOrVillageName(result.admin1)}, ` : ''}
+                        {cleanCityOrVillageName(cleanCountryName(result.country))}
                       </small>
                     </button>
                   ))}
@@ -2118,7 +2102,12 @@ function Home() {
                   {cleanCityOrVillageName(location.name)}
                   {(location.admin1 || location.country) ? (
                     <span style={{ fontSize: '0.45em', opacity: 0.65, marginLeft: 12, fontWeight: 400 }}>
-                      {[cleanAdminName(location.admin1), location.country].filter(Boolean).join(', ')}
+                      {[
+                        cleanCityOrVillageName(location.admin1),
+                        cleanCityOrVillageName(cleanCountryName(location.country)),
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}
                     </span>
                   ) : null}
                 </h1>
@@ -2230,7 +2219,7 @@ function Home() {
                     forecast={forecast}
                     daily={daily}
                     settings={settings}
-                    locationName={location.name}
+                    locationName={cleanCityOrVillageName(location.name)}
                   />
                 ) : activeTab === 'Air Quality' ? (
                   <AirQualityView
@@ -2418,13 +2407,13 @@ function Sidebar({
         <div className="side-label">Quick switch</div>
         {savedList.slice(0, 5).map((item) => (
           <button
-            className={`saved-location ${location.id === item.id || location.name === item.name ? 'active' : ''}`}
-            data-testid={`button-saved-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
+            className={`saved-location ${location.id === item.id || cleanCityOrVillageName(location.name) === cleanCityOrVillageName(item.name) ? 'active' : ''}`}
+            data-testid={`button-saved-${cleanCityOrVillageName(item.name).toLowerCase().replace(/\s+/g, '-')}`}
             key={item.id}
             onClick={() => pickLocation(item)}
           >
-            <span>{item.name}</span>
-            <span>{item.name === location.name ? 'ACTIVE' : '→'}</span>
+            <span>{cleanCityOrVillageName(item.name)}</span>
+            <span>{cleanCityOrVillageName(item.name) === cleanCityOrVillageName(location.name) ? 'ACTIVE' : '→'}</span>
           </button>
         ))}
       </div>
@@ -2536,7 +2525,7 @@ function TodayView({
       weatherCode: activeWeatherCode,
       windSpeedKmh: activeWindSpeed,
       windGustsKmh: current.wind_gusts_10m ?? (forecast.daily.wind_speed_10m_max?.[0] ? forecast.daily.wind_speed_10m_max[0] * 1.15 : undefined),
-      locationName: location.name,
+      locationName: cleanCityOrVillageName(location.name),
       simulated: settings.simulateAlert,
     });
   }, [activeWeatherCode, activeWindSpeed, current.wind_gusts_10m, forecast.daily, location.name, settings.simulateAlert]);
@@ -2567,12 +2556,18 @@ function TodayView({
             themeKey={`${atmosphericTheme.id}-${activeWeatherCode}-${activeIsDay ? 'day' : 'night'}`}
           />
 
-          {/* Dynamic Weather Animation inside Atmospheric State Card (Rain, Snow, Thunderstorm, Sun, Stars, Clouds) */}
+          {/* Dynamic Weather Animation inside Atmospheric State Card (Rain, Sleet, Snow, Thunderstorm, Hail, Sun, Stars, Clouds, Fog) */}
           <AtmosphericStateWeatherAnimation
             weatherCode={activeWeatherCode}
             isDay={activeIsDay}
             windSpeed={activeWindSpeed}
-            windDirection={current.wind_direction_10m}
+            windDirection={
+              isViewingSelectedHour
+                ? (forecast.hourly.wind_direction_10m?.[selectedHour] ?? current.wind_direction_10m)
+                : current.wind_direction_10m
+            }
+            cloudCover={current.cloud_cover}
+            precipitation={current.precipitation}
           />
 
           {/* Radar / Atmospheric Wave Geometry Arcs */}
@@ -2711,7 +2706,7 @@ function TodayView({
           sunset={daily.sunset[0]}
           currentTime={current.time}
           timeFormat={settings.timeFormat}
-          locationName={location.name}
+          locationName={cleanCityOrVillageName(location.name)}
           locationKey={`${location.latitude.toFixed(3)}_${location.longitude.toFixed(3)}`}
         />
       </div>
@@ -2905,11 +2900,27 @@ function TodayView({
             onUpdateSettings?.((s) => ({ ...s, briefingTone: tone }));
             onGenerateInsight(tone);
           }}
+          locationName={cleanCityOrVillageName(location.name)}
           currentWeatherCode={current.weather_code}
           currentUvIndex={current.uv_index}
           currentAqi={air?.us_aqi}
+          currentPm25={air?.pm2_5}
           currentTemp={current.temperature_2m}
           currentFeelsLike={current.apparent_temperature}
+          currentHumidity={current.relative_humidity_2m}
+          currentWindSpeed={current.wind_speed_10m}
+          currentPrecipProb={forecast.hourly.precipitation_probability[hourlyStart] ?? 0}
+          currentPressure={current.surface_pressure}
+          currentCloudCover={current.cloud_cover}
+          dailyHigh={daily.temperature_2m_max[0]}
+          dailyLow={daily.temperature_2m_min[0]}
+          upcomingDaily={daily.time.slice(0, 5).map((date, idx) => ({
+            date,
+            weatherCode: daily.weather_code[idx],
+            high: daily.temperature_2m_max[idx],
+            low: daily.temperature_2m_min[idx],
+            precipitationProbability: daily.precipitation_probability_max[idx],
+          }))}
         />
       </div>
 
@@ -3134,21 +3145,47 @@ function AtmosBriefingCard({
   onGenerate,
   briefingTone = 'general',
   onToneChange,
+  locationName = 'your location',
   currentWeatherCode = 0,
   currentUvIndex,
   currentAqi,
+  currentPm25,
   currentTemp,
   currentFeelsLike,
+  currentHumidity,
+  currentWindSpeed,
+  currentPrecipProb,
+  currentPressure,
+  currentCloudCover,
+  dailyHigh,
+  dailyLow,
+  upcomingDaily = [],
 }: {
   insight: ReturnType<typeof useGenerateWeatherInsight>;
   onGenerate: (overrideTone?: AppSettings['briefingTone']) => void;
   briefingTone?: AppSettings['briefingTone'];
   onToneChange?: (tone: AppSettings['briefingTone']) => void;
+  locationName?: string;
   currentWeatherCode?: number;
   currentUvIndex?: number;
   currentAqi?: number;
+  currentPm25?: number;
   currentTemp?: number;
   currentFeelsLike?: number;
+  currentHumidity?: number;
+  currentWindSpeed?: number;
+  currentPrecipProb?: number;
+  currentPressure?: number;
+  currentCloudCover?: number;
+  dailyHigh?: number;
+  dailyLow?: number;
+  upcomingDaily?: Array<{
+    date: string;
+    weatherCode: number;
+    high: number;
+    low: number;
+    precipitationProbability: number;
+  }>;
 }) {
   const data = insight.data;
   const [focusMenuOpen, setFocusMenuOpen] = useState(false);
@@ -3171,6 +3208,7 @@ function AtmosBriefingCard({
 
   // Fallback weather condition health tip computed from current conditions
   const fallbackWeatherHealthTip = useMemo(() => {
+    const wind = currentWindSpeed !== undefined ? Math.round(currentWindSpeed) : 0;
     if ([95, 96, 99].includes(currentWeatherCode)) {
       return 'Thunderstorm safety: seek enclosed shelter immediately. Sudden pressure drops and airborne pollen fragmentation can trigger severe thunderstorm asthma.';
     }
@@ -3183,11 +3221,14 @@ function AtmosBriefingCard({
     if ([45, 48].includes(currentWeatherCode)) {
       return 'Fog caution: ground-level moisture traps fine vehicle particulates, which can irritate reactive airways; wear a light mask if sensitive.';
     }
+    if (wind >= 32) {
+      return `High wind advisory (${wind} km/h): airborne particulates and allergens can cause ocular irritation; wrap-around protective lenses recommended.`;
+    }
     if (currentWeatherCode === 0) {
       return 'Clear sky solar exposure: direct sunlight increases ocular strain; wear 100% UV-blocking sunglasses and maintain regular hydration.';
     }
     return 'Overcast light: up to 80% of UV rays penetrate thin clouds; maintain skin awareness and hydration during midday hours.';
-  }, [currentWeatherCode]);
+  }, [currentWeatherCode, currentWindSpeed]);
 
   // Fallback index-specific actionable health tips (UV 3+ sunscreen, UV 8+ seek shade, etc.)
   const fallbackIndexHealthTips = useMemo(() => {
@@ -3307,64 +3348,161 @@ function AtmosBriefingCard({
     return tips;
   }, [currentUvIndex, currentAqi, currentTemp, currentFeelsLike]);
 
-  const toneData: Record<
-    AppSettings['briefingTone'],
-    { headline: string; summary: string; recommendations: string[] }
-  > = {
-    general: {
-      headline: 'Balanced Daily Atmospheric Outlook',
-      summary: 'Equilibrium atmospheric conditions. Recommended for general day-to-day planning, clothing choices, and outdoor comfort.',
-      recommendations: [
-        currentUvIndex && currentUvIndex >= 3
-          ? (currentUvIndex >= 8 ? 'UV 8+: Seek shade between 10am-4pm, apply SPF 50+ sunscreen, and wear UV-protective sunglasses.' : 'UV 3+: Apply SPF 30+ sunscreen during peak midday hours for skin protection.')
-          : 'Layer comfortably for shifting diurnal temperatures throughout the day.',
-        'Stay hydrated and track midday weather condition shifts.',
-        'Keep light weather protection handy for unexpected atmospheric shifts.',
-      ],
-    },
-    health: {
-      headline: currentUvIndex && currentUvIndex >= 8 ? 'High Solar Index: Seek Shade & Apply Sunscreen' : currentAqi && currentAqi > 100 ? 'Sensitive Respiratory Outlook' : 'Optimal Bioclimatic Health Balance',
-      summary: 'Biometeorological analysis of physiological strain, UV radiation skin barriers, and cardiovascular pacing.',
-      recommendations: [
-        currentUvIndex && currentUvIndex >= 3
-          ? (currentUvIndex >= 8 ? 'UV 8+ detected: seek shade between 10am-4pm, apply broad-spectrum SPF 50+ sunscreen, and wear UV-blocking sunglasses.' : 'UV 3+ active: recommend applying SPF 30+ sunscreen before outdoor exposure.')
-          : 'Low UV index provides safe conditions for daytime outdoor light exposure.',
-        currentAqi && currentAqi > 100
-          ? 'Air quality is elevated; pace aerobic exertion and consider an indoor workout.'
-          : 'Clean air quality supports deep breathing and cellular oxygenation during exercise.',
-        'Hydrate steadily and take shade breaks during periods of peak daylight.',
-      ],
-    },
-    commute: {
-      headline: 'Transit & Commuter Advisory',
-      summary: 'Priority focus on road conditions, transit sightlines, precipitation windows, and commuter wind exposure.',
-      recommendations: [
-        'Check route radar before peak morning and evening travel windows.',
-        'Expect moderate wind gusts on elevated bridges and highway corridors.',
-        'Allow 5-10 min buffer if precipitation probability increases.',
-      ],
-    },
-    outdoor: {
-      headline: 'Runner & Athletics Index',
-      summary: 'Optimized analysis for cardio training, running, cycling, outdoor endurance, and thermal strain.',
-      recommendations: [
-        'Optimal outdoor workout window is morning or late afternoon.',
-        'Hydration baseline: drink 500ml water per 45 min of high exertion.',
-        'Air quality and particulate density are favorable for deep breathing.',
-      ],
-    },
-    detailed: {
-      headline: 'Meteorological Technical Briefing',
-      summary: 'Deep synoptic synthesis covering barometric pressure tendencies, moisture convergence, and boundary-layer dynamics.',
-      recommendations: [
-        'Barometer remains steady near standard sea-level equilibrium.',
-        'Dew point spread indicates low surface condensation risk.',
-        'Boundary layer winds show laminar flow with gentle shear.',
-      ],
-    },
-  };
+  const computedFallbackBriefing = useMemo(() => {
+    const temp = currentTemp !== undefined ? Math.round(currentTemp) : 21;
+    const feelsLike = currentFeelsLike !== undefined ? Math.round(currentFeelsLike) : temp;
+    const humidity = currentHumidity !== undefined ? Math.round(currentHumidity) : 55;
+    const wind = currentWindSpeed !== undefined ? Math.round(currentWindSpeed) : 10;
+    const rain = currentPrecipProb !== undefined ? Math.round(currentPrecipProb) : 0;
+    const uv = currentUvIndex !== undefined ? Math.round(currentUvIndex * 10) / 10 : 4;
+    const aqi = currentAqi !== undefined ? Math.round(currentAqi) : 38;
+    const pm25 = currentPm25 !== undefined ? Math.round(currentPm25 * 10) / 10 : Math.round((aqi * 0.28) * 10) / 10;
+    const pressure = currentPressure !== undefined ? Math.round(currentPressure) : 1013;
+    const cloudCover = currentCloudCover !== undefined ? Math.round(currentCloudCover) : 25;
+    const highTemp = dailyHigh !== undefined ? Math.round(dailyHigh) : upcomingDaily[0] ? Math.round(upcomingDaily[0].high) : temp + 3;
+    const lowTemp = dailyLow !== undefined ? Math.round(dailyLow) : upcomingDaily[0] ? Math.round(upcomingDaily[0].low) : temp - 4;
+    const diurnalSwing = Math.max(0, highTemp - lowTemp);
+    const dewPoint = Math.round(temp - (100 - humidity) / 5);
+    const nextRainDay = upcomingDaily.find((d) => d.precipitationProbability >= 45);
+    const upcomingTrend =
+      upcomingDaily.length >= 2
+        ? Math.round(upcomingDaily[1].high) > highTemp + 2
+          ? `Expect warming toward ${Math.round(upcomingDaily[1].high)}°C tomorrow.`
+          : Math.round(upcomingDaily[1].high) < highTemp - 2
+          ? `Cooler air arrives tomorrow with highs near ${Math.round(upcomingDaily[1].high)}°C.`
+          : `Temperatures remain steady near ${Math.round(upcomingDaily[1].high)}°C tomorrow.`
+        : '';
 
-  const activeData = data || toneData[briefingTone] || toneData.general;
+    const toneData: Record<
+      AppSettings['briefingTone'],
+      { headline: string; summary: string; recommendations: string[] }
+    > = {
+      general: {
+        headline:
+          rain > 50
+            ? 'Showers Expected: Keep Rainwear Handy'
+            : temp >= 28
+            ? 'Warm & Bright: Stay Cool Outdoors'
+            : temp <= 5
+            ? 'Crisp & Cold: Layer Up Today'
+            : 'Pleasant & Balanced Atmospheric Outlook',
+        summary: `Currently ${temp}°C (feels like ${feelsLike}°C) in ${locationName} with ${humidity}% humidity, ${wind} km/h winds, and ${rain}% rain chance. Expect a ${lowTemp}°C to ${highTemp}°C temperature range today with US AQI ${aqi}. ${upcomingTrend}`.trim(),
+        recommendations: [
+          uv >= 3
+            ? uv >= 8
+              ? `UV ${uv} (Very High): seek shade between 10am–4pm, wear UV-blocking sunglasses, and reapply SPF 50+ sunscreen.`
+              : `UV ${uv} (Moderate/High): apply SPF 30+ sunscreen and wear protective eyewear during peak midday hours.`
+            : `Thermal layering: ${diurnalSwing}°C daily swing (${lowTemp}°C low to ${highTemp}°C high) at ${humidity}% humidity calls for light breathable layers.`,
+          rain > 30
+            ? `Precipitation outlook (${rain}%): pack an umbrella or water-resistant shell for passing showers.`
+            : nextRainDay
+            ? `Dry skies today (${rain}% rain chance, ${cloudCover}% cloud cover); next notable shower probability (${nextRainDay.precipitationProbability}%) arrives ${nextRainDay.date}.`
+            : `Dry atmospheric column (${rain}% rain chance, ${wind} km/h wind) keeps outdoor errands smooth all day.`,
+          aqi > 100
+            ? `Air quality is sensitive (AQI ${aqi}, PM2.5 ${pm25} µg/m³); keep strenuous outdoor activity measured.`
+            : `Air quality is healthy (AQI ${aqi}, PM2.5 ${pm25} µg/m³) with clear breathing comfort across ${locationName}.`,
+          fallbackWeatherHealthTip,
+        ],
+      },
+      health: {
+        headline:
+          uv >= 8
+            ? 'High UV Radiation: Sun Protection Essential'
+            : aqi > 100
+            ? 'Sensitive Air Quality Advisory'
+            : 'Optimal Bioclimatic Wellness Index',
+        summary: `Physiological telemetry for ${locationName} reports UV Index ${uv}, US AQI ${aqi} (PM2.5 ${pm25} µg/m³), and apparent thermal strain near ${feelsLike}°C with ${humidity}% humidity. Dew point sits near ${dewPoint}°C across a ${lowTemp}°C–${highTemp}°C daily temperature span.`,
+        recommendations: [
+          uv >= 3
+            ? uv >= 8
+              ? `UV ${uv} warning: seek shade between 10am–4pm, wear UV400 eyewear, and reapply broad-spectrum SPF 50+ every 2 hours.`
+              : `UV ${uv} active: apply SPF 30+ sunscreen 15 minutes before midday outdoor exposure.`
+            : `Low UV (${uv}) permits comfortable daytime outdoor light exposure with minimal burn risk.`,
+          aqi > 100
+            ? `Air quality is elevated (AQI ${aqi}, PM2.5 ${pm25} µg/m³); pace aerobic exertion and consider indoor filtered training.`
+            : `Air quality is favorable (AQI ${aqi}, PM2.5 ${pm25} µg/m³); supportive of deep respiratory capacity and outdoor walking.`,
+          feelsLike >= 28
+            ? `Hydration protocol: ${feelsLike}°C thermal load increases fluid loss—drink 350ml cool water every 45 minutes outdoors.`
+            : feelsLike <= 5
+            ? `Cold air (${feelsLike}°C feels-like) constricts peripheral circulation; wear insulated thermal layers to preserve core warmth.`
+            : `Balanced thermal load (${temp}°C, feels ${feelsLike}°C) with ${humidity}% RH supports steady comfort and normal hydration.`,
+          fallbackWeatherHealthTip,
+        ],
+      },
+      commute: {
+        headline:
+          rain > 40
+            ? 'Commuter Weather: Wet Road Hazards'
+            : wind > 28
+            ? 'Commuter Weather: Gusty Transit Advisory'
+            : 'Commuter Weather: Clear Route Conditions',
+        summary: `Transit conditions in ${locationName} show ${rain}% precipitation probability, ${wind} km/h surface winds, and ${temp}°C air temperature (${lowTemp}°C–${highTemp}°C range). ${rain > 40 ? 'Wet pavement, spray plumes, and longer braking distances are likely.' : 'Sightlines and road friction remain favorable across main corridors.'}`,
+        recommendations: [
+          rain > 40
+            ? `High rain risk (${rain}%): allow 5–10 extra minutes for wet-road braking distances and reduced visibility.`
+            : `Low rain chance (${rain}%): dry roadway and rail corridors support normal commuter transit times.`,
+          wind > 28
+            ? `Crosswind alert (${wind} km/h): expect lateral gusts on bridges, elevated flyovers, and exposed cycling lanes.`
+            : `Light ${wind} km/h winds ensure stable handling for cycling, motorcycles, and highway transit.`,
+          uv >= 6
+            ? `Elevated solar glare (UV ${uv}): keep polarized driving sunglasses handy during morning and afternoon glare windows.`
+            : nextRainDay
+            ? `Keep compact rain gear ready; next higher shower probability (${nextRainDay.precipitationProbability}%) arrives ${nextRainDay.date}.`
+            : `Carry a light outer layer for the ${diurnalSwing}°C swing between ${lowTemp}°C morning lows and ${highTemp}°C afternoon highs.`,
+          fallbackWeatherHealthTip,
+        ],
+      },
+      outdoor: {
+        headline: "Athletics & Runner's Performance Index",
+        summary: `Cardiorespiratory conditions in ${locationName}: ${temp}°C (${feelsLike}°C feels-like), US AQI ${aqi} (PM2.5 ${pm25} µg/m³), ${humidity}% RH, and ${wind} km/h wind. ${temp > 28 ? 'Heat dissipation requires early or late pacing.' : 'Aerodynamic drag and thermal load are well-balanced for training.'}`,
+        recommendations: [
+          temp > 28
+            ? `Peak temperatures near ${highTemp}°C raise core strain; schedule tempo or long runs before 8am or after sunset.`
+            : `Optimal workout conditions (${temp}°C, dew point ${dewPoint}°C) across morning and late-afternoon sessions.`,
+          aqi <= 50
+            ? `Clean air (AQI ${aqi}, PM2.5 ${pm25} µg/m³) supports peak VO2 max intervals and outdoor endurance blocks.`
+            : `Moderate/elevated particulates (AQI ${aqi}, PM2.5 ${pm25} µg/m³); monitor breathing cadence during high-intensity efforts.`,
+          uv >= 3
+            ? `UV Index ${uv}: wear sweat-resistant SPF 30+ sunscreen, breathable moisture-wicking fabric, and sport sunglasses.`
+            : `Mild UV (${uv}) and ${wind} km/h wind offer low solar strain—stay hydrated with 500ml water per 45 min of exercise.`,
+          fallbackWeatherHealthTip,
+        ],
+      },
+      detailed: {
+        headline: 'Meteorological Deep Dive & Synoptic Dynamics',
+        summary: `Surface observations in ${locationName}: ${temp}°C (${feelsLike}°C apparent), ${humidity}% RH, estimated dew point ${dewPoint}°C, pressure ${pressure} hPa, ${cloudCover}% cloud cover, and ${wind} km/h boundary wind. Diurnal range spans ${lowTemp}°C to ${highTemp}°C with ${rain}% precipitation probability.`,
+        recommendations: [
+          `Thermodynamic profile: ${temp - dewPoint}°C dew-point spread at ${humidity}% RH indicates ${humidity > 75 ? 'high boundary-layer moisture and elevated condensation/haze potential' : 'well-mixed air column moisture with comfortable evaporative cooling'}.`,
+          rain > 30
+            ? `Convective forcing: ${rain}% precipitation chance at ${pressure} hPa signals moisture convergence and passing shower cells.`
+            : `Boundary-layer flow: steady ${wind} km/h horizontal winds at ${pressure} hPa with low (${rain}%) convective rainfall potential.`,
+          `Diurnal & aerosol telemetry: ${diurnalSwing}°C daily range (${lowTemp}°C–${highTemp}°C), UV ${uv}, and PM2.5 ${pm25} µg/m³ (US AQI ${aqi}). ${upcomingTrend}`.trim(),
+          fallbackWeatherHealthTip,
+        ],
+      },
+    };
+
+    return toneData[briefingTone] || toneData.general;
+  }, [
+    briefingTone,
+    locationName,
+    currentTemp,
+    currentFeelsLike,
+    currentHumidity,
+    currentWindSpeed,
+    currentPrecipProb,
+    currentUvIndex,
+    currentAqi,
+    currentPm25,
+    currentPressure,
+    currentCloudCover,
+    dailyHigh,
+    dailyLow,
+    upcomingDaily,
+    fallbackWeatherHealthTip,
+  ]);
+
+  const activeData = data || computedFallbackBriefing;
   const activeWeatherHealthTip = data?.weatherHealthTip || fallbackWeatherHealthTip;
   const activeIndexHealthTips = data?.indexHealthTips && data.indexHealthTips.length > 0 ? data.indexHealthTips : fallbackIndexHealthTips;
 
@@ -3734,11 +3872,16 @@ function AirQualityView({
         <div>
           <div className="eyebrow">Atmospheric Chemistry & Sensors</div>
           <h2 className="section-title" style={{ fontSize: 24, marginTop: 4 }}>
-            Air Quality at {location.name}
+            Air Quality at {cleanCityOrVillageName(location.name)}
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))' }}>
-              {[location.admin1, location.country].filter(Boolean).join(', ')}
+              {[
+                cleanCityOrVillageName(location.admin1),
+                cleanCityOrVillageName(cleanCountryName(location.country)),
+              ]
+                .filter(Boolean)
+                .join(', ')}
             </span>
             <span
               style={{
@@ -3813,12 +3956,12 @@ function AirQualityView({
 
             <h3 className="aqi-hero-title">
               {usAqi <= 50
-                ? `Clean, fresh breathing conditions in ${location.name}`
+                ? `Clean, fresh breathing conditions in ${cleanCityOrVillageName(location.name)}`
                 : usAqi <= 100
-                ? `Acceptable air with low background pollutants in ${location.name}`
+                ? `Acceptable air with low background pollutants in ${cleanCityOrVillageName(location.name)}`
                 : usAqi <= 150
-                ? `Elevated particulates — sensitivity alert in ${location.name}`
-                : `Unfavorable air quality conditions in ${location.name}`}
+                ? `Elevated particulates — sensitivity alert in ${cleanCityOrVillageName(location.name)}`
+                : `Unfavorable air quality conditions in ${cleanCityOrVillageName(location.name)}`}
             </h3>
             <p className="aqi-hero-desc">{aqiInfo.summary}</p>
           </div>
@@ -3854,7 +3997,9 @@ function AirQualityView({
       <section className="aqi-spectrum-card" data-testid="card-aqi-spectrum">
         <div className="section-heading" style={{ marginBottom: 4 }}>
           <span className="eyebrow">Air Quality Index (AQI) Reference Scale (0 – 300+)</span>
-          <span className="section-note">Local reading at {location.name}: AQI {usAqi} ({aqiInfo.level})</span>
+          <span className="section-note">
+            Local reading at {cleanCityOrVillageName(location.name)}: AQI {usAqi} ({aqiInfo.level})
+          </span>
         </div>
 
         <div className="aqi-spectrum-bar-wrap">
@@ -3882,7 +4027,9 @@ function AirQualityView({
         <div className="section-heading flex items-center justify-between flex-wrap gap-2">
           <div>
             <div className="eyebrow">Atmospheric Contaminants</div>
-            <h2 className="section-title">Individual Pollutant Concentrations at {location.name}</h2>
+            <h2 className="section-title">
+              Individual Pollutant Concentrations at {cleanCityOrVillageName(location.name)}
+            </h2>
           </div>
         </div>
 
@@ -3903,7 +4050,7 @@ function AirQualityView({
             currentAqi={usAqi}
             timezone={forecast.timezone}
             timeFormat={settings.timeFormat}
-            locationName={location.name}
+            locationName={cleanCityOrVillageName(location.name)}
           />
 
           <div className="aqi-forecast-strip" data-testid="strip-aqi-forecast">
@@ -4201,8 +4348,8 @@ function SavedLocationsView({
                       <Plus size={14} color="hsl(var(--primary))" />
                     </div>
                     <small>
-                      {item.admin1 ? `${cleanAdminName(item.admin1)}, ` : ''}
-                      {item.country}
+                      {item.admin1 ? `${cleanCityOrVillageName(item.admin1)}, ` : ''}
+                      {cleanCityOrVillageName(cleanCountryName(item.country))}
                     </small>
                   </button>
                 ))}
@@ -4291,8 +4438,8 @@ function SavedCityCard({
         <div>
           <div className="saved-city-name">{cleanCityOrVillageName(location.name)}</div>
           <div className="saved-city-sub">
-            {location.admin1 ? `${cleanAdminName(location.admin1)}, ` : ''}
-            {location.country ?? 'World'}
+            {location.admin1 ? `${cleanCityOrVillageName(location.admin1)}, ` : ''}
+            {cleanCityOrVillageName(cleanCountryName(location.country)) || 'World'}
           </div>
         </div>
       </div>
@@ -4318,7 +4465,7 @@ function SavedCityCard({
             onRemove();
           }}
           title="Remove from saved"
-          aria-label={`Remove ${location.name}`}
+          aria-label={`Remove ${cleanCityOrVillageName(location.name)}`}
         >
           <Trash2 size={13} />
           <span>Remove</span>

@@ -6,11 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from './errorResponse';
-export * from './healthStatus';
-export * from './lifestyleAdvice';
-export * from './weatherInsight';
-export * from './weatherInsightInput';
-export * from './weatherInsightInputAirQuality';
-export * from './weatherInsightInputCurrent';
-export * from './weatherInsightInputUpcomingItem';
+export * from './errorResponse.ts';
+export * from './healthStatus.ts';
+export * from './lifestyleAdvice.ts';
+export * from './weatherInsight.ts';
+export * from './weatherInsightInput.ts';
+export * from './weatherInsightInputAirQuality.ts';
+export * from './weatherInsightInputCurrent.ts';
+export * from './weatherInsightInputUpcomingItem.ts';
