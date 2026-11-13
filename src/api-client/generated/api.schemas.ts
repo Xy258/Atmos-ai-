@@ -48,6 +48,8 @@ export interface WeatherInsightInput {
   upcoming: WeatherInsightInputUpcomingItem[];
   focus?: string;
   customActivity?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface WeatherInsight {

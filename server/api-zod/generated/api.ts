@@ -55,7 +55,9 @@ export const GenerateWeatherInsightBody = zod.object({
     "precipitationProbability": zod.number()
   })),
   "focus": zod.string().optional(),
-  "customActivity": zod.string().optional()
+  "customActivity": zod.string().optional(),
+  "latitude": zod.number().optional(),
+  "longitude": zod.number().optional()
 })
 
 export const GenerateWeatherInsightResponse = zod.object({
@@ -99,7 +101,9 @@ export const GenerateLifestyleAdviceBody = zod.object({
   "low": zod.number(),
   "precipitationProbability": zod.number()
 })),
-  "customActivity": zod.string().optional()
+  "customActivity": zod.string().optional(),
+  "latitude": zod.number().optional(),
+  "longitude": zod.number().optional()
 })
 
 export const GenerateLifestyleAdviceResponse = zod.object({

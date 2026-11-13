@@ -437,6 +437,90 @@ function createProceduralWindTexture(windSpeedKmh: number, activeLat: number, ac
   return texture;
 }
 
+const liveOwmCanvasCache = new Map<string, Promise<HTMLCanvasElement | null>>();
+
+/**
+ * Fetch 4x4 z=2 OpenWeatherMap global weather tiles via our server proxy and
+ * reproject Web Mercator into a 1024x512 equirectangular canvas.
+ */
+function loadLiveOpenWeatherLayerCanvas(
+  layer: 'clouds_new' | 'temp_new' | 'precipitation_new' | 'wind_new'
+): Promise<HTMLCanvasElement | null> {
+  const cached = liveOwmCanvasCache.get(layer);
+  if (cached) return cached;
+
+  const promise = (async (): Promise<HTMLCanvasElement | null> => {
+    try {
+      const z = 2;
+      const grid = 4; // 2^2
+      const tileSize = 256;
+      const mercSize = grid * tileSize; // 1024
+
+      const tiles = await Promise.all(
+        Array.from({ length: grid * grid }, async (_, idx) => {
+          const x = idx % grid;
+          const y = Math.floor(idx / grid);
+          const res = await fetch(`/api/weather/tile/${layer}/${z}/${x}/${y}`);
+          if (!res.ok || res.status !== 200) return null;
+          const blob = await res.blob();
+          const bitmap = await createImageBitmap(blob);
+          return { x, y, bitmap };
+        })
+      );
+
+      if (tiles.some((t) => t === null)) {
+        for (const t of tiles) t?.bitmap.close();
+        return null;
+      }
+
+      const mercCanvas = document.createElement('canvas');
+      mercCanvas.width = mercSize;
+      mercCanvas.height = mercSize;
+      const mercCtx = mercCanvas.getContext('2d');
+      if (!mercCtx) return null;
+
+      for (const tile of tiles) {
+        if (!tile) continue;
+        mercCtx.drawImage(tile.bitmap, tile.x * tileSize, tile.y * tileSize, tileSize, tileSize);
+        tile.bitmap.close();
+      }
+
+      const eqWidth = 1024;
+      const eqHeight = 512;
+      const eqCanvas = document.createElement('canvas');
+      eqCanvas.width = eqWidth;
+      eqCanvas.height = eqHeight;
+      const eqCtx = eqCanvas.getContext('2d');
+      if (!eqCtx) return null;
+
+      const srcData = mercCtx.getImageData(0, 0, mercSize, mercSize);
+      const dstData = eqCtx.createImageData(eqWidth, eqHeight);
+      const src32 = new Uint32Array(srcData.data.buffer);
+      const dst32 = new Uint32Array(dstData.data.buffer);
+
+      for (let row = 0; row < eqHeight; row++) {
+        const lat = 90 - ((row + 0.5) / eqHeight) * 180;
+        const clampedLat = Math.max(-85.0511, Math.min(85.0511, lat));
+        const latRad = (clampedLat * Math.PI) / 180;
+        const mercN = Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+        const mercV = 0.5 - mercN / (2 * Math.PI);
+        const srcY = Math.max(0, Math.min(mercSize - 1, Math.round(mercV * (mercSize - 1))));
+        const srcRowOffset = srcY * mercSize;
+        const dstRowOffset = row * eqWidth;
+        dst32.set(src32.subarray(srcRowOffset, srcRowOffset + eqWidth), dstRowOffset);
+      }
+
+      eqCtx.putImageData(dstData, 0, 0);
+      return eqCanvas;
+    } catch {
+      return null;
+    }
+  })();
+
+  liveOwmCanvasCache.set(layer, promise);
+  return promise;
+}
+
 // ============================================================================
 // 2D ORTHOGRAPHIC PROJECTION MATHEMATICS
 // Converts geographic [longitude, latitude] into 2D screen coordinates on spinning sphere
@@ -1190,7 +1274,7 @@ export function Globe3DModal({
     }
   }, [mapMode, use2DFallback]);
 
-  // Update WebGL layers opacities
+  // Update WebGL layers opacities & upgrade active layer with live OpenWeather tiles
   useEffect(() => {
     if (use2DFallback) return;
     if (tempMeshRef.current) {
@@ -1209,6 +1293,42 @@ export function Globe3DModal({
       const mat = cloudMeshRef.current.material as THREE.MeshStandardMaterial;
       mat.opacity = selectedLayer === 'clouds' ? layerOpacity : 0.22;
     }
+
+    let cancelled = false;
+    const applyLiveTileLayer = async (
+      owmLayer: 'clouds_new' | 'temp_new' | 'precipitation_new' | 'wind_new',
+      mesh: THREE.Mesh | null
+    ) => {
+      if (!mesh) return;
+      const liveCanvas = await loadLiveOpenWeatherLayerCanvas(owmLayer);
+      if (cancelled || !liveCanvas || !mesh) return;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if ((mat.map as THREE.CanvasTexture | null)?.image !== liveCanvas) {
+        const prevMap = mat.map;
+        const liveTex = new THREE.CanvasTexture(liveCanvas);
+        liveTex.colorSpace = THREE.SRGBColorSpace;
+        liveTex.wrapS = THREE.RepeatWrapping;
+        liveTex.wrapT = THREE.ClampToEdgeWrapping;
+        liveTex.needsUpdate = true;
+        mat.map = liveTex;
+        mat.needsUpdate = true;
+        prevMap?.dispose();
+      }
+    };
+
+    if (selectedLayer === 'temperature') {
+      void applyLiveTileLayer('temp_new', tempMeshRef.current);
+    } else if (selectedLayer === 'precipitation') {
+      void applyLiveTileLayer('precipitation_new', precipMeshRef.current);
+    } else if (selectedLayer === 'wind') {
+      void applyLiveTileLayer('wind_new', windMeshRef.current);
+    } else if (selectedLayer === 'clouds') {
+      void applyLiveTileLayer('clouds_new', cloudMeshRef.current);
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedLayer, layerOpacity, use2DFallback]);
 
   // Update WebGL streams visibility

@@ -1398,6 +1398,149 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
   };
 }
 
+interface OpenWeatherBundleResponse {
+  available: boolean;
+  stationName?: string;
+  observedAt?: string;
+  current?: {
+    temperature: number;
+    apparentTemperature: number;
+    humidity: number;
+    pressure: number;
+    seaLevelPressure?: number;
+    groundLevelPressure?: number;
+    visibilityKm: number;
+    windSpeedKmh: number;
+    windDeg: number;
+    windGustKmh?: number;
+    cloudCover: number;
+    precipitationMm1h: number;
+    weatherId: number;
+    weatherCode: number;
+    weatherMain: string;
+    weatherDescription: string;
+  };
+  airPollution?: {
+    owmAqi: number;
+    pm2_5: number;
+    pm10: number;
+    no2: number;
+    o3: number;
+    so2: number;
+    co: number;
+    nh3: number;
+    no: number;
+  } | null;
+}
+
+function fuseOpenWeatherWithOpenMeteo(
+  nextForecast: Forecast,
+  nextAir: AirQuality,
+  owm: OpenWeatherBundleResponse | null
+): { forecast: Forecast; air: AirQuality; fused: boolean } {
+  if (!owm?.available || !owm.current) {
+    return { forecast: nextForecast, air: nextAir, fused: false };
+  }
+
+  const oc = owm.current;
+  const om = nextForecast.current;
+  const blend = (a: number, b: number, weightA = 0.55) =>
+    Math.round((a * weightA + b * (1 - weightA)) * 10) / 10;
+
+  const isHazardOwmCode = [95, 96, 99, 65, 63, 61, 55, 53, 51, 75, 73, 71, 45, 48].includes(
+    oc.weatherCode
+  );
+  const resolvedCode =
+    om.weather_code <= 3 && (isHazardOwmCode || oc.precipitationMm1h > 0)
+      ? oc.weatherCode
+      : om.weather_code;
+
+  const currentHourKey = `${om.time.slice(0, 13)}:00`;
+  const currentHourIdx = Math.max(
+    0,
+    nextForecast.hourly.time.findIndex((t) => t === currentHourKey)
+  );
+  const nextVisibility = [...nextForecast.hourly.visibility];
+  if (oc.visibilityKm > 0 && currentHourIdx < nextVisibility.length) {
+    const omVisM = nextVisibility[currentHourIdx] ?? 10000;
+    nextVisibility[currentHourIdx] = Math.round(oc.visibilityKm * 1000 * 0.65 + omVisM * 0.35);
+  }
+
+  const fusedForecast: Forecast = {
+    ...nextForecast,
+    current: {
+      ...om,
+      temperature_2m: blend(oc.temperature, om.temperature_2m, 0.55),
+      apparent_temperature: blend(oc.apparentTemperature, om.apparent_temperature, 0.55),
+      relative_humidity_2m: Math.round(blend(oc.humidity, om.relative_humidity_2m, 0.55)),
+      surface_pressure: blend(
+        oc.groundLevelPressure ?? oc.pressure,
+        om.surface_pressure ?? oc.pressure,
+        0.55
+      ),
+      wind_speed_10m: blend(oc.windSpeedKmh, om.wind_speed_10m, 0.5),
+      wind_gusts_10m:
+        oc.windGustKmh != null && om.wind_gusts_10m != null
+          ? Math.max(oc.windGustKmh, om.wind_gusts_10m)
+          : oc.windGustKmh ?? om.wind_gusts_10m,
+      cloud_cover: Math.round(blend(oc.cloudCover, om.cloud_cover, 0.55)),
+      precipitation: Math.max(om.precipitation, oc.precipitationMm1h),
+      rain: Math.max(om.rain, oc.precipitationMm1h),
+      weather_code: resolvedCode,
+    },
+    hourly: {
+      ...nextForecast.hourly,
+      visibility: nextVisibility,
+    },
+  };
+
+  let fusedAir = nextAir;
+  if (owm.airPollution && nextAir?.current) {
+    const ap = owm.airPollution;
+    const ac = nextAir.current;
+    const blendOpt = (owmVal: number, omVal?: number) =>
+      omVal != null && omVal > 0 && owmVal > 0
+        ? Math.round(((owmVal + omVal) / 2) * 10) / 10
+        : omVal ?? owmVal;
+
+    fusedAir = {
+      ...nextAir,
+      current: {
+        ...ac,
+        pm2_5: blendOpt(ap.pm2_5, ac.pm2_5) ?? ac.pm2_5,
+        pm10: blendOpt(ap.pm10, ac.pm10),
+        nitrogen_dioxide: blendOpt(ap.no2, ac.nitrogen_dioxide),
+        ozone: blendOpt(ap.o3, ac.ozone),
+        sulphur_dioxide: blendOpt(ap.so2, ac.sulphur_dioxide),
+        carbon_monoxide: blendOpt(ap.co, ac.carbon_monoxide),
+      },
+    };
+  }
+
+  return { forecast: fusedForecast, air: fusedAir, fused: true };
+}
+
+async function searchCombinedLocations(query: string, signal?: AbortSignal): Promise<Location[]> {
+  try {
+    const res = await fetch(`/api/weather/search?q=${encodeURIComponent(query)}`, { signal });
+    if (res.ok) {
+      const data = (await res.json()) as { results?: Location[] };
+      if (Array.isArray(data.results) && data.results.length > 0) {
+        return data.results;
+      }
+    }
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') throw err;
+  }
+  const fallback = await getJson<{ results?: Location[] }>(
+    `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
+      query
+    )}&count=6&language=en&format=json`,
+    signal
+  );
+  return fallback.results ?? [];
+}
+
 export type TabType = 'Today' | 'Week' | 'Air Quality' | 'Saved' | 'Settings';
 
 export const TAB_HASHES: Record<TabType, string> = {
@@ -1540,6 +1683,7 @@ function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [isViewingCached, setIsViewingCached] = useState(false);
+  const [isDualSourceActive, setIsDualSourceActive] = useState(false);
   const [isGlobeModalOpen, setIsGlobeModalOpen] = useState(false);
   const [lastSyncStatus, setLastSyncStatus] = useState<SyncStatus | null>(null);
 
@@ -1621,23 +1765,42 @@ function Home() {
       const params = `latitude=${next.latitude}&longitude=${next.longitude}&timezone=auto`;
       const forecastUrl = `https://api.open-meteo.com/v1/forecast?${params}&forecast_days=7&current=temperature_2m,relative_humidity_2m,apparent_temperature,surface_pressure,dew_point_2m,is_day,precipitation,rain,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index&hourly=temperature_2m,apparent_temperature,surface_pressure,dew_point_2m,precipitation_probability,weather_code,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,visibility&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,wind_speed_10m_max,uv_index_max`;
       const airQualityUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?${params}&current=us_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,aerosol_optical_depth,dust,european_aqi&hourly=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,european_aqi`;
-      const [nextForecast, nextAir] = await Promise.all([
+      const owmUrl = `/api/weather/openweather?latitude=${next.latitude}&longitude=${next.longitude}`;
+
+      const [rawForecast, rawAir, owmPayload] = await Promise.all([
         getJson<Forecast>(forecastUrl, undefined, isRefresh),
         getJson<AirQuality>(airQualityUrl, undefined, isRefresh),
+        isDeviceOffline
+          ? Promise.resolve(null)
+          : fetch(owmUrl)
+              .then((r) => (r.ok ? (r.json() as Promise<OpenWeatherBundleResponse>) : null))
+              .catch(() => null),
       ]);
+
+      const { forecast: nextForecast, air: nextAir, fused } = fuseOpenWeatherWithOpenMeteo(
+        rawForecast,
+        rawAir,
+        owmPayload
+      );
+      setIsDualSourceActive(fused);
 
       lastFetchedTimeRef.current = Date.now();
       setIsViewingCached(isDeviceOffline || lastFetchServedFromCache);
 
-      // If location name is generic, resolve the city name from timezone
+      // If location name is generic, resolve the city name from station or timezone
       let finalName = next.name;
       if (
         next.name === 'My Location' ||
         next.name === 'Detected Location' ||
         next.name === 'Current Location'
       ) {
+        const stationCity = owmPayload?.available && owmPayload.stationName
+          ? cleanCityOrVillageName(owmPayload.stationName)
+          : '';
         const timezoneCity = nextForecast.timezone?.split('/')[1]?.replace(/_/g, ' ');
-        if (timezoneCity) {
+        if (stationCity) {
+          finalName = stationCity;
+        } else if (timezoneCity) {
           finalName = timezoneCity;
         }
       }
@@ -1758,13 +1921,8 @@ function Home() {
     }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => {
-      void getJson<{ results?: Location[] }>(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-          query
-        )}&count=6&language=en&format=json`,
-        controller.signal
-      )
-        .then((data) => setResults(data.results ?? []))
+      void searchCombinedLocations(query, controller.signal)
+        .then((items) => setResults(items))
         .catch(() => setResults([]));
     }, 280);
     return () => {
@@ -1967,10 +2125,12 @@ function Home() {
             precipitationProbability: daily.precipitation_probability_max[index],
           })),
           focus: focusToUse,
+          latitude: location.latitude,
+          longitude: location.longitude,
         },
       });
     },
-    [forecast, air, location.name, location.country, settings.timeFormat, settings.briefingTone, current, hourlyStart, daily, insight.mutate]
+    [forecast, air, location.name, location.country, location.latitude, location.longitude, settings.timeFormat, settings.briefingTone, current, hourlyStart, daily, insight.mutate]
   );
 
   useEffect(() => {
@@ -2125,6 +2285,8 @@ function Home() {
                       ? 'Offline: You are viewing cached weather and air quality records from your previous sync.'
                       : isViewingCached
                       ? 'Live feed unreachable: Viewing cached weather data.'
+                      : isDualSourceActive
+                      ? 'Online: Dual-source telemetry active (OpenWeatherMap live station + Open-Meteo gridded forecast).'
                       : 'Online: Live high-resolution meteorological feed active from Open-Meteo.'
                   }
                 >
@@ -2147,7 +2309,9 @@ function Home() {
                       }
                     />
                     <span className="feed-source-name font-mono font-medium">
-                      Open-Meteo {!isOnline ? '(Cached)' : isViewingCached ? '(Cached)' : 'High-Resolution Feed'}
+                      {isDualSourceActive && isOnline && !isViewingCached
+                        ? 'OpenWeather + Open-Meteo'
+                        : `Open-Meteo ${!isOnline || isViewingCached ? '(Cached)' : 'High-Resolution Feed'}`}
                     </span>
                   </div>
                   <div className="feed-status-line">
@@ -2162,6 +2326,8 @@ function Home() {
                         ? 'Offline · Viewing cached data'
                         : isViewingCached
                         ? 'Feed unreachable · Using cache'
+                        : isDualSourceActive
+                        ? 'Dual-source station & radar sync'
                         : 'Live meteorological radar'}
                     </span>
                   </div>
@@ -4285,13 +4451,8 @@ function SavedLocationsView({
     setIsSearching(true);
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      void getJson<{ results?: Location[] }>(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-          searchQuery
-        )}&count=5&language=en&format=json`,
-        controller.signal
-      )
-        .then((d) => setSearchResults(d.results ?? []))
+      void searchCombinedLocations(searchQuery, controller.signal)
+        .then((d) => setSearchResults(d.slice(0, 6)))
         .catch(() => setSearchResults([]))
         .finally(() => setIsSearching(false));
     }, 250);
