@@ -2246,6 +2246,7 @@ function Home() {
                     settings={settings}
                     setSettings={setSettings}
                     effectiveTheme={effectiveTheme}
+                    isActualDaylight={isActualDaylight}
                     locationName={cleanCityOrVillageName(location.name)}
                     weatherCode={current?.weather_code ?? 0}
                     windSpeedKmh={current?.wind_speed_10m ?? 12}
@@ -4483,6 +4484,7 @@ function SettingsView({
   setSettings,
   onReset,
   effectiveTheme = 'light',
+  isActualDaylight = true,
   locationName,
   weatherCode = 0,
   windSpeedKmh = 12,
@@ -4493,6 +4495,7 @@ function SettingsView({
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   onReset: () => void;
   effectiveTheme?: 'light' | 'dark';
+  isActualDaylight?: boolean;
   locationName?: string;
   weatherCode?: number;
   windSpeedKmh?: number;
@@ -4700,7 +4703,7 @@ function SettingsView({
       {/* Atmospheric Soundscape & Audio Settings */}
       <AtmosphericSoundscapeSettings
         weatherCode={weatherCode}
-        isDay={effectiveTheme === 'light'}
+        isDay={isActualDaylight}
         windSpeedKmh={windSpeedKmh}
       />
 
