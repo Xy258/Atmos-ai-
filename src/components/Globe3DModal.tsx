@@ -61,6 +61,21 @@ function getCountryBadge(country?: string): string {
   return '📍';
 }
 
+function cleanLocationLabel(name?: string): string {
+  if (!name) return '';
+  let cleaned = name.trim();
+  if (cleaned.includes(',')) {
+    const parts = cleaned.split(',').map((p) => p.trim());
+    const valid = parts.filter(
+      (p) => !p.toLowerCase().match(/^(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)$/i)
+    );
+    if (valid.length > 0) cleaned = valid[0];
+  }
+  cleaned = cleaned.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim();
+  cleaned = cleaned.replace(/^[,\-\s/]+|[,\-\s/]+$/g, '').replace(/\s{2,}/g, ' ').trim();
+  return cleaned || name.trim();
+}
+
 // Convert Lat/Lon (degrees) to 3D Cartesian coordinates on sphere of radius R
 function latLonToVector3(lat: number, lon: number, radius: number): THREE.Vector3 {
   const phi = (90 - lat) * (Math.PI / 180);
@@ -1559,7 +1574,7 @@ export function Globe3DModal({
         ctx.shadowBlur = 0;
 
         // Small location callout pill
-        const tagText = `${location.name} · ${Math.round(currentTemp)}°C`;
+        const tagText = `${cleanLocationLabel(location.name)} · ${Math.round(currentTemp)}°C`;
         ctx.font = 'bold 11px system-ui, sans-serif';
         const tagWidth = ctx.measureText(tagText).width + 16;
         const tagX = pinPt.x - tagWidth / 2;
@@ -1709,8 +1724,8 @@ export function Globe3DModal({
             </div>
             <p className="text-[10.5px] text-slate-300 font-medium mt-0.5 flex items-center gap-1 leading-none">
               <MapPin size={10} className="text-amber-400 shrink-0" />
-              <span className="truncate max-w-[140px] sm:max-w-none">{location.name}</span>
-              {location.admin1 && <span className="text-slate-400 hidden xs:inline">· {location.admin1}</span>}
+              <span className="truncate max-w-[140px] sm:max-w-none">{cleanLocationLabel(location.name)}</span>
+              {location.admin1 && <span className="text-slate-400 hidden xs:inline">· {cleanLocationLabel(location.admin1)}</span>}
             </p>
           </div>
         </div>
@@ -1962,7 +1977,7 @@ export function Globe3DModal({
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="font-semibold text-white uppercase text-[11px] tracking-wider font-display">
-                {location.name} Telemetry
+                {cleanLocationLabel(location.name)} Telemetry
               </span>
               <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
                 {Math.round(currentTemp)}°C · AQI {airQuality?.current.us_aqi ?? '--'} · {Math.round(windSpeedKmh)} km/h · {cloudCover}% Cloud

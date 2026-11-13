@@ -7,6 +7,14 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import { HourlyTemperatureChart } from '@/components/HourlyTemperatureChart';
 import { AndroidInstallButton } from '@/components/AndroidInstallModal';
+import {
+  registerPeriodicWeatherSync,
+  updateServiceWorkerSyncLocation,
+  onWeatherSyncCompleted,
+  triggerManualWeatherSync,
+  getLastSyncStatus,
+  type SyncStatus,
+} from '@/services/periodicSync';
 import { UvIndexMiniChart } from '@/components/UvIndexMiniChart';
 import { WindRoseVisualization } from '@/components/WindRoseVisualization';
 import { RainParticleOverlay, isRainOrShowers } from '@/components/RainParticleOverlay';
@@ -1043,13 +1051,13 @@ let lastFetchServedFromCache = false;
 
 async function getJson<T>(url: string, signal?: AbortSignal, skipCache = false): Promise<T> {
   const cached = jsonCache.get(url);
-  // If browser is offline and we have a cached copy, use it immediately
+  // If browser is offline and we have a cached copy in memory, use it immediately
   if (typeof navigator !== 'undefined' && !navigator.onLine && cached) {
     lastFetchServedFromCache = true;
     return cached.data as T;
   }
 
-  // Serve from cache if fresh and skipCache is false
+  // Serve from in-memory cache if fresh and skipCache is false
   if (!skipCache && cached && Date.now() - cached.timestamp < 50000) {
     return cached.data as T;
   }
@@ -1057,12 +1065,10 @@ async function getJson<T>(url: string, signal?: AbortSignal, skipCache = false):
   try {
     const response = await fetch(url, { signal });
     if (response.status === 429 && cached) {
-      // Use stale cache on rate limit
       lastFetchServedFromCache = true;
       return cached.data as T;
     }
     if (response.status === 429) {
-      // Wait 1.2s and retry once
       await new Promise((r) => setTimeout(r, 1200));
       const retryResponse = await fetch(url, { signal });
       if (retryResponse.ok) {
@@ -1077,28 +1083,97 @@ async function getJson<T>(url: string, signal?: AbortSignal, skipCache = false):
         lastFetchServedFromCache = true;
         return cached.data as T;
       }
+      // Check CacheStorage for background-sync cached weather data
+      if (typeof caches !== 'undefined') {
+        try {
+          const swMatch = await caches.match(url);
+          if (swMatch) {
+            const swData = (await swMatch.json()) as T;
+            jsonCache.set(url, { timestamp: Date.now(), data: swData });
+            lastFetchServedFromCache = true;
+            return swData;
+          }
+        } catch {
+          // ignore
+        }
+      }
       throw new Error('The weather service is having trouble right now.');
     }
     const data = (await response.json()) as T;
     jsonCache.set(url, { timestamp: Date.now(), data });
-    lastFetchServedFromCache = false;
+    lastFetchServedFromCache = response.headers.get('X-Atmos-Cache') === 'HIT';
     return data;
   } catch (err) {
     if (cached) {
       lastFetchServedFromCache = true;
       return cached.data as T;
     }
+    // Check CacheStorage for background-sync cached weather data when offline
+    if (typeof caches !== 'undefined') {
+      try {
+        const swMatch = await caches.match(url);
+        if (swMatch) {
+          const swData = (await swMatch.json()) as T;
+          jsonCache.set(url, { timestamp: Date.now(), data: swData });
+          lastFetchServedFromCache = true;
+          return swData;
+        }
+      } catch {
+        // ignore
+      }
+    }
     throw err;
   }
 }
 
-function cleanCountryName(name?: string): string {
+export function cleanCountryName(name?: string): string {
   if (!name) return '';
   return name
     .replace(/\s*\(the\)$/i, '')
     .replace(/^United States of America$/i, 'United States')
     .replace(/^United Kingdom of Great Britain and Northern Ireland$/i, 'United Kingdom')
     .trim();
+}
+
+/**
+ * Strips 'taluk', 'taluka', 'tehsil', 'mandal', 'subdistrict' administrative suffixes
+ * so only the clean city, town, or village name is displayed.
+ */
+export function cleanCityOrVillageName(name?: string): string {
+  if (!name) return '';
+  let cleaned = name.trim();
+
+  if (cleaned.includes(',')) {
+    const parts = cleaned
+      .split(',')
+      .map((p) => p.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim())
+      .filter(Boolean);
+    if (parts.length > 0) {
+      cleaned = parts[0];
+    }
+  }
+
+  cleaned = cleaned.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim();
+  cleaned = cleaned.replace(/^[,\-\s/]+|[,\-\s/]+$/g, '').replace(/\s{2,}/g, ' ').trim();
+
+  return cleaned || name.trim();
+}
+
+export function cleanAdminName(name?: string): string {
+  if (!name) return '';
+  let cleaned = name.trim();
+  if (cleaned.includes(',')) {
+    const parts = cleaned
+      .split(',')
+      .map((p) => p.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim())
+      .filter(Boolean);
+    if (parts.length > 0) {
+      cleaned = parts[0];
+    }
+  }
+  cleaned = cleaned.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, '').trim();
+  cleaned = cleaned.replace(/^[,\-\s/]+|[,\-\s/]+$/g, '').replace(/\s{2,}/g, ' ').trim();
+  return cleaned;
 }
 
 async function detectLocationByIp(): Promise<Location | null> {
@@ -1117,11 +1192,11 @@ async function detectLocationByIp(): Promise<Location | null> {
       if (data?.city && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
         return {
           id: data.id || Math.round(Math.abs(data.latitude * 10000 + data.longitude * 100)),
-          name: data.city,
+          name: cleanCityOrVillageName(data.city),
           latitude: data.latitude,
           longitude: data.longitude,
           country: cleanCountryName(data.country),
-          admin1: data.region || '',
+          admin1: cleanAdminName(data.region || ''),
         };
       }
     }
@@ -1144,11 +1219,11 @@ async function detectLocationByIp(): Promise<Location | null> {
       if (data?.success !== false && data?.city && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
         return {
           id: Math.round(Math.abs(data.latitude * 10000 + data.longitude * 100)),
-          name: data.city,
+          name: cleanCityOrVillageName(data.city),
           latitude: data.latitude,
           longitude: data.longitude,
           country: cleanCountryName(data.country),
-          admin1: data.region || '',
+          admin1: cleanAdminName(data.region || ''),
         };
       }
     }
@@ -1180,11 +1255,11 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
       ) {
         return {
           id: data.id || locationId,
-          name: data.name,
+          name: cleanCityOrVillageName(data.name),
           latitude,
           longitude,
           country: cleanCountryName(data.country),
-          admin1: data.admin1 || '',
+          admin1: cleanAdminName(data.admin1 || ''),
         };
       }
     }
@@ -1201,28 +1276,47 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
       const data = (await photonRes.json()) as {
         features?: Array<{
           properties?: {
+            osm_key?: string;
+            osm_value?: string;
             city?: string;
             town?: string;
             village?: string;
+            hamlet?: string;
+            suburb?: string;
+            neighbourhood?: string;
+            locality?: string;
+            municipality?: string;
             county?: string;
             district?: string;
-            locality?: string;
             state?: string;
             country?: string;
             name?: string;
+            type?: string;
           };
         }>;
       };
       const props = data?.features?.[0]?.properties;
       if (props) {
-        const cityName =
+        const isPlaceFeature =
+          props.osm_key === 'place' &&
+          ['city', 'town', 'village', 'hamlet', 'suburb', 'quarter', 'neighbourhood', 'locality'].includes(
+            props.osm_value || props.type || ''
+          );
+
+        const rawCityName =
+          (isPlaceFeature ? props.name : undefined) ||
           props.city ||
           props.town ||
           props.village ||
-          props.county ||
-          props.district ||
+          props.hamlet ||
+          props.suburb ||
+          props.neighbourhood ||
           props.locality ||
-          props.name;
+          props.municipality ||
+          (props.type !== 'house' && props.type !== 'amenity' && props.osm_key !== 'highway' ? props.name : undefined) ||
+          props.county ||
+          props.district;
+        const cityName = cleanCityOrVillageName(rawCityName);
         if (cityName) {
           return {
             id: locationId,
@@ -1230,7 +1324,7 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
             latitude,
             longitude,
             country: cleanCountryName(props.country),
-            admin1: props.state || '',
+            admin1: cleanAdminName(props.state || ''),
           };
         }
       }
@@ -1251,7 +1345,10 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
           city?: string;
           town?: string;
           village?: string;
+          hamlet?: string;
+          suburb?: string;
           municipality?: string;
+          locality?: string;
           county?: string;
           state_district?: string;
           state?: string;
@@ -1259,14 +1356,18 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
         };
       };
       const addr = data.address;
-      const cityName =
+      const rawCityName =
         addr?.city ||
         addr?.town ||
         addr?.village ||
+        addr?.hamlet ||
+        addr?.suburb ||
+        addr?.locality ||
         addr?.municipality ||
         addr?.county ||
         addr?.state_district ||
         addr?.state;
+      const cityName = cleanCityOrVillageName(rawCityName);
       if (cityName) {
         return {
           id: locationId,
@@ -1274,7 +1375,7 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
           latitude,
           longitude,
           country: cleanCountryName(addr?.country),
-          admin1: addr?.state || '',
+          admin1: cleanAdminName(addr?.state || ''),
         };
       }
     }
@@ -1294,7 +1395,8 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
         principalSubdivision?: string;
         countryName?: string;
       };
-      const cityName = data.city || data.locality || data.principalSubdivision;
+      const rawCityName = data.city || data.locality || data.principalSubdivision;
+      const cityName = cleanCityOrVillageName(rawCityName);
       if (cityName) {
         return {
           id: locationId,
@@ -1302,7 +1404,7 @@ async function reverseGeocodeCoordinates(latitude: number, longitude: number): P
           latitude,
           longitude,
           country: cleanCountryName(data.countryName),
-          admin1: data.principalSubdivision || '',
+          admin1: cleanAdminName(data.principalSubdivision || ''),
         };
       }
     }
@@ -1354,7 +1456,15 @@ function Home() {
       const stored = localStorage.getItem('atmos_saved_locations');
       if (stored) {
         const parsed = JSON.parse(stored) as Location[];
-        return parsed.map((item) => (item.name === 'My Location' ? DEFAULT_LOCATIONS[0] : item));
+        return parsed.map((item) =>
+          item.name === 'My Location'
+            ? DEFAULT_LOCATIONS[0]
+            : {
+                ...item,
+                name: cleanCityOrVillageName(item.name),
+                admin1: item.admin1 ? cleanAdminName(item.admin1) : item.admin1,
+              }
+        );
       }
       return DEFAULT_LOCATIONS;
     } catch {
@@ -1376,7 +1486,13 @@ function Home() {
       const stored = localStorage.getItem('atmos_current_location');
       if (stored) {
         const parsed = JSON.parse(stored) as Location;
-        if (parsed.name && parsed.name !== 'My Location') return parsed;
+        if (parsed.name && parsed.name !== 'My Location') {
+          return {
+            ...parsed,
+            name: cleanCityOrVillageName(parsed.name),
+            admin1: parsed.admin1 ? cleanAdminName(parsed.admin1) : parsed.admin1,
+          };
+        }
       }
       return savedList[0] || DEFAULT_LOCATIONS[0];
     } catch {
@@ -1390,6 +1506,8 @@ function Home() {
     } catch {
       // ignore
     }
+    // Keep Service Worker periodic background sync informed of active coordinates
+    updateServiceWorkerSyncLocation(location);
   }, [location]);
 
   // Individual page support with hash routing and instant scroll restoration
@@ -1443,6 +1561,7 @@ function Home() {
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [isViewingCached, setIsViewingCached] = useState(false);
   const [isGlobeModalOpen, setIsGlobeModalOpen] = useState(false);
+  const [lastSyncStatus, setLastSyncStatus] = useState<SyncStatus | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1596,6 +1715,29 @@ function Home() {
     void loadWeather(location);
   }, [location.latitude, location.longitude, loadWeather]);
 
+  // Ensure Periodic Background Sync is registered & listen for background SW sync completions
+  useEffect(() => {
+    void registerPeriodicWeatherSync().then(() => {
+      updateServiceWorkerSyncLocation(location);
+    });
+    void getLastSyncStatus().then((status) => {
+      if (status) setLastSyncStatus(status);
+    });
+
+    const unsubscribe = onWeatherSyncCompleted((data) => {
+      setLastSyncStatus({
+        timestamp: data.timestamp,
+        source: data.source,
+        updatedCount: data.updatedCount,
+        success: true,
+      });
+      // Refresh UI from freshly updated cache/network
+      void loadWeather(location, false);
+    });
+
+    return unsubscribe;
+  }, [location, loadWeather]);
+
   // Background refresh interval of 1 minute (60,000ms) when the browser tab is focused
   useEffect(() => {
     const REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
@@ -1652,21 +1794,31 @@ function Home() {
   }, [query]);
 
   const pickLocation = (next: Location, skipToast = false) => {
+    const cleanedNext: Location = {
+      ...next,
+      name: cleanCityOrVillageName(next.name),
+      admin1: next.admin1 ? cleanAdminName(next.admin1) : next.admin1,
+    };
     setQuery('');
     setResults([]);
-    setLocation(next);
+    setLocation(cleanedNext);
     setActiveTab('Today');
     if (!skipToast) {
-      showToast(`Switched location to ${next.name}`);
+      showToast(`Switched location to ${cleanedNext.name}`);
     }
   };
 
   const addSavedLocation = (loc: Location) => {
-    if (!savedList.some((item) => item.id === loc.id || (item.name === loc.name && item.country === loc.country))) {
-      setSavedList((prev) => [loc, ...prev]);
-      showToast(`Added ${loc.name} to saved locations`);
+    const cleanedLoc: Location = {
+      ...loc,
+      name: cleanCityOrVillageName(loc.name),
+      admin1: loc.admin1 ? cleanAdminName(loc.admin1) : loc.admin1,
+    };
+    if (!savedList.some((item) => item.id === cleanedLoc.id || (item.name === cleanedLoc.name && item.country === cleanedLoc.country))) {
+      setSavedList((prev) => [cleanedLoc, ...prev]);
+      showToast(`Added ${cleanedLoc.name} to saved locations`);
     } else {
-      showToast(`${loc.name} is already in your saved list`);
+      showToast(`${cleanedLoc.name} is already in your saved list`);
     }
   };
 
@@ -1898,9 +2050,9 @@ function Home() {
                       key={result.id}
                       onClick={() => pickLocation(result)}
                     >
-                      {result.name}
+                      {cleanCityOrVillageName(result.name)}
                       <small>
-                        {result.admin1 ? `${result.admin1}, ` : ''}
+                        {result.admin1 ? `${cleanAdminName(result.admin1)}, ` : ''}
                         {result.country}
                       </small>
                     </button>
@@ -1963,10 +2115,10 @@ function Home() {
                   <span>Live conditions / {forecast?.timezone?.replace('_', ' ') ?? 'Local time'}</span>
                 </div>
                 <h1 className="location-title" data-testid="text-location-name">
-                  {location.name}
+                  {cleanCityOrVillageName(location.name)}
                   {(location.admin1 || location.country) ? (
                     <span style={{ fontSize: '0.45em', opacity: 0.65, marginLeft: 12, fontWeight: 400 }}>
-                      {[location.admin1, location.country].filter(Boolean).join(', ')}
+                      {[cleanAdminName(location.admin1), location.country].filter(Boolean).join(', ')}
                     </span>
                   ) : null}
                 </h1>
@@ -2105,9 +2257,20 @@ function Home() {
                     settings={settings}
                     setSettings={setSettings}
                     effectiveTheme={effectiveTheme}
-                    locationName={location.name}
+                    locationName={cleanCityOrVillageName(location.name)}
                     weatherCode={current?.weather_code ?? 0}
                     windSpeedKmh={current?.wind_speed_10m ?? 12}
+                    lastSyncStatus={lastSyncStatus}
+                    onSyncNow={async () => {
+                      updateServiceWorkerSyncLocation(location);
+                      const triggered = await triggerManualWeatherSync();
+                      showToast(
+                        triggered
+                          ? 'Background weather cache synced for offline access'
+                          : 'Offline cache refreshed from live feed'
+                      );
+                      void loadWeather(location, true);
+                    }}
                     onReset={() => {
                       setSettings(DEFAULT_SETTINGS);
                       setSavedList(DEFAULT_LOCATIONS);
@@ -4034,11 +4197,11 @@ function SavedLocationsView({
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>{item.name}</span>
+                      <span>{cleanCityOrVillageName(item.name)}</span>
                       <Plus size={14} color="hsl(var(--primary))" />
                     </div>
                     <small>
-                      {item.admin1 ? `${item.admin1}, ` : ''}
+                      {item.admin1 ? `${cleanAdminName(item.admin1)}, ` : ''}
                       {item.country}
                     </small>
                   </button>
@@ -4126,9 +4289,9 @@ function SavedCityCard({
     <div className={`saved-card ${isActive ? 'active-location' : ''}`} data-testid={`card-saved-city-${location.id}`}>
       <div className="saved-card-header">
         <div>
-          <div className="saved-city-name">{location.name}</div>
+          <div className="saved-city-name">{cleanCityOrVillageName(location.name)}</div>
           <div className="saved-city-sub">
-            {location.admin1 ? `${location.admin1}, ` : ''}
+            {location.admin1 ? `${cleanAdminName(location.admin1)}, ` : ''}
             {location.country ?? 'World'}
           </div>
         </div>
@@ -4176,6 +4339,8 @@ function SettingsView({
   locationName,
   weatherCode = 0,
   windSpeedKmh = 12,
+  lastSyncStatus = null,
+  onSyncNow,
 }: {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
@@ -4184,6 +4349,8 @@ function SettingsView({
   locationName?: string;
   weatherCode?: number;
   windSpeedKmh?: number;
+  lastSyncStatus?: SyncStatus | null;
+  onSyncNow?: () => void;
 }) {
   return (
     <div className="settings-view-container animate-rise">
@@ -4402,16 +4569,43 @@ function SettingsView({
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: 'hsl(var(--foreground))' }}>
-              Standalone Android App / PWA
+        <div className="settings-rows">
+          <div className="settings-row">
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'hsl(var(--foreground))' }}>
+                Standalone Android App / PWA
+              </div>
+              <div style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>
+                Install on your Android home screen with offline caching, high-res squircle icon, and fullscreen display.
+              </div>
             </div>
-            <div style={{ fontSize: 11.5, color: 'hsl(var(--muted-foreground))', marginTop: 2 }}>
-              Install on your Android home screen with offline caching, high-res squircle icon, and fullscreen display.
-            </div>
+            <AndroidInstallButton />
           </div>
-          <AndroidInstallButton />
+
+          <div className="settings-row">
+            <div>
+              <div className="settings-row-label">Periodic Background Sync</div>
+              <div className="settings-row-sub">
+                {lastSyncStatus?.timestamp
+                  ? `Automatically refreshes weather in the background · Last synced ${new Date(
+                      lastSyncStatus.timestamp
+                    ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Automatically keeps offline weather cache fresh while app is closed'}
+              </div>
+            </div>
+            {onSyncNow && (
+              <button
+                type="button"
+                className="segmented-btn active"
+                onClick={onSyncNow}
+                data-testid="button-sync-offline-cache"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px' }}
+              >
+                <RefreshCw size={13} />
+                <span>Sync Cache Now</span>
+              </button>
+            )}
+          </div>
         </div>
       </section>
 

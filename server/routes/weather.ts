@@ -623,6 +623,21 @@ router.get("/weather/ip-location", async (req, res) => {
       .trim();
   };
 
+  const cleanCityOrVillage = (name?: string) => {
+    if (!name) return "";
+    let cleaned = name.trim();
+    if (cleaned.includes(",")) {
+      const parts = cleaned.split(",").map((p) => p.trim());
+      const valid = parts.filter(
+        (p) => !p.toLowerCase().match(/^(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)$/i)
+      );
+      if (valid.length > 0) cleaned = valid[0];
+    }
+    cleaned = cleaned.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, "").trim();
+    cleaned = cleaned.replace(/^[,\-\s/]+|[,\-\s/]+$/g, "").replace(/\s{2,}/g, " ").trim();
+    return cleaned || name.trim();
+  };
+
   try {
     const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
     const ipStr = typeof clientIp === "string" ? clientIp.split(",")[0].trim() : "";
@@ -637,11 +652,11 @@ router.get("/weather/ip-location", async (req, res) => {
       if (data?.success !== false && data?.city && data?.latitude && data?.longitude) {
         res.json({
           id: Math.round(Math.abs(data.latitude * 10000 + data.longitude * 100)),
-          city: data.city,
+          city: cleanCityOrVillage(data.city),
           latitude: data.latitude,
           longitude: data.longitude,
           country: cleanCountry(data.country),
-          region: data.region || "",
+          region: cleanCityOrVillage(data.region || ""),
         });
         return;
       }
@@ -662,7 +677,6 @@ router.get("/weather/reverse-geocode", async (req, res) => {
     return;
   }
 
-  // Helper to clean country names like "United States of America (the)" -> "United States"
   const cleanCountry = (name?: string) => {
     if (!name) return "";
     return name
@@ -672,6 +686,23 @@ router.get("/weather/reverse-geocode", async (req, res) => {
       .trim();
   };
 
+  const cleanCityOrVillage = (name?: string) => {
+    if (!name) return "";
+    let cleaned = name.trim();
+    if (cleaned.includes(",")) {
+      const parts = cleaned
+        .split(",")
+        .map((p) => p.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, "").trim())
+        .filter(Boolean);
+      if (parts.length > 0) cleaned = parts[0];
+    }
+    cleaned = cleaned.replace(/\b(?:taluk|taluka|tehsil|mandal|sub-district|subdistrict)\b/gi, "").trim();
+    cleaned = cleaned.replace(/^[,\-\s/]+|[,\-\s/]+$/g, "").replace(/\s{2,}/g, " ").trim();
+    return cleaned || name.trim();
+  };
+
+  let fallbackFromCounty: { name: string; country: string; admin1: string } | null = null;
+
   // 1. Try Photon Komoot (OpenStreetMap global data, ultra-fast and reliable on cloud hosts)
   try {
     const photonRes = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}`);
@@ -679,14 +710,25 @@ router.get("/weather/reverse-geocode", async (req, res) => {
       const data = await photonRes.json();
       const props = data?.features?.[0]?.properties;
       if (props) {
-        const cityName =
+        const isPlaceFeature =
+          props.osm_key === "place" &&
+          ["city", "town", "village", "hamlet", "suburb", "quarter", "neighbourhood", "locality"].includes(
+            props.osm_value || props.type || ""
+          );
+
+        const settlementName =
+          (isPlaceFeature ? props.name : undefined) ||
           props.city ||
           props.town ||
           props.village ||
-          props.county ||
-          props.district ||
+          props.hamlet ||
+          props.suburb ||
+          props.neighbourhood ||
           props.locality ||
-          props.name;
+          props.municipality ||
+          (props.type !== "house" && props.type !== "amenity" && props.osm_key !== "highway" ? props.name : undefined);
+
+        const cityName = cleanCityOrVillage(settlementName);
         if (cityName) {
           res.json({
             id: Math.round(Math.abs(lat * 10000 + lon * 100)),
@@ -694,9 +736,18 @@ router.get("/weather/reverse-geocode", async (req, res) => {
             latitude: lat,
             longitude: lon,
             country: cleanCountry(props.country),
-            admin1: props.state || "",
+            admin1: cleanCityOrVillage(props.state || ""),
           });
           return;
+        }
+
+        const countyCleaned = cleanCityOrVillage(props.county || props.district);
+        if (countyCleaned) {
+          fallbackFromCounty = {
+            name: countyCleaned,
+            country: cleanCountry(props.country),
+            admin1: cleanCityOrVillage(props.state || ""),
+          };
         }
       }
     }
@@ -704,7 +755,7 @@ router.get("/weather/reverse-geocode", async (req, res) => {
     // continue to fallback
   }
 
-  // 2. Try Nominatim Reverse Geocode
+  // 2. Try Nominatim Reverse Geocode (resolves village/town accurately when Photon returns highway/amenity)
   try {
     const nomRes = await fetch(
       `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
@@ -716,6 +767,9 @@ router.get("/weather/reverse-geocode", async (req, res) => {
           city?: string;
           town?: string;
           village?: string;
+          hamlet?: string;
+          suburb?: string;
+          locality?: string;
           municipality?: string;
           county?: string;
           state_district?: string;
@@ -724,14 +778,18 @@ router.get("/weather/reverse-geocode", async (req, res) => {
         };
       };
       const addr = data.address;
-      const cityName =
+      const rawCityName =
         addr?.city ||
         addr?.town ||
         addr?.village ||
+        addr?.hamlet ||
+        addr?.suburb ||
+        addr?.locality ||
         addr?.municipality ||
         addr?.county ||
         addr?.state_district ||
         addr?.state;
+      const cityName = cleanCityOrVillage(rawCityName);
       if (cityName) {
         res.json({
           id: Math.round(Math.abs(lat * 10000 + lon * 100)),
@@ -739,13 +797,25 @@ router.get("/weather/reverse-geocode", async (req, res) => {
           latitude: lat,
           longitude: lon,
           country: cleanCountry(addr?.country),
-          admin1: addr?.state || "",
+          admin1: cleanCityOrVillage(addr?.state || ""),
         });
         return;
       }
     }
   } catch {
     // continue to fallback
+  }
+
+  if (fallbackFromCounty) {
+    res.json({
+      id: Math.round(Math.abs(lat * 10000 + lon * 100)),
+      name: fallbackFromCounty.name,
+      latitude: lat,
+      longitude: lon,
+      country: fallbackFromCounty.country,
+      admin1: fallbackFromCounty.admin1,
+    });
+    return;
   }
 
   // 3. Fallback to coordinates
