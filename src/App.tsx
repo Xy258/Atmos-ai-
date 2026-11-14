@@ -37,6 +37,7 @@ import { HumidityMiniMeter } from '@/components/HumidityMiniMeter';
 import { PressureMiniGauge } from '@/components/PressureMiniGauge';
 import { FeelsLikeMiniMeter } from '@/components/FeelsLikeMiniMeter';
 import { CloudCoverMiniMeter } from '@/components/CloudCoverMiniMeter';
+import { WaterQualityPanel } from '@/components/WaterQualityPanel';
 import { useGenerateWeatherInsight, useHealthCheck } from '@workspace/api-client-react';
 import {
   Activity,
@@ -1556,6 +1557,8 @@ export const HASH_TO_TAB: Record<string, TabType> = {
   week: 'Week',
   'air-quality': 'Air Quality',
   air: 'Air Quality',
+  'water-quality': 'Air Quality',
+  water: 'Air Quality',
   saved: 'Saved',
   settings: 'Settings',
 };
@@ -1644,9 +1647,22 @@ function Home() {
     return 'Today';
   });
 
-  // Whenever activeTab changes: scroll to top and update URL hash
+  const [envMode, setEnvMode] = useState<'air' | 'water'>(() => {
+    if (typeof window !== 'undefined') {
+      const cleanHash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+      if (cleanHash === 'water-quality' || cleanHash === 'water') {
+        return 'water';
+      }
+    }
+    return 'air';
+  });
+
+  // Whenever activeTab or envMode changes: scroll to top and update URL hash
   useEffect(() => {
-    const targetHash = TAB_HASHES[activeTab] || 'today';
+    const targetHash =
+      activeTab === 'Air Quality' && envMode === 'water'
+        ? 'water-quality'
+        : TAB_HASHES[activeTab] || 'today';
     const currentHash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
     if (currentHash !== targetHash) {
       window.history.replaceState(null, '', `#/${targetHash}`);
@@ -1657,12 +1673,17 @@ function Home() {
     if (mainFrame) {
       mainFrame.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     }
-  }, [activeTab]);
+  }, [activeTab, envMode]);
 
   // Support browser back/forward buttons and direct bookmark navigation
   useEffect(() => {
     const handleHashChange = () => {
       const cleanHash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+      if (cleanHash === 'water-quality' || cleanHash === 'water') {
+        setEnvMode('water');
+      } else if (cleanHash === 'air-quality' || cleanHash === 'air') {
+        setEnvMode('air');
+      }
       if (cleanHash && HASH_TO_TAB[cleanHash] && HASH_TO_TAB[cleanHash] !== activeTab) {
         setActiveTab(HASH_TO_TAB[cleanHash]);
         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
@@ -2374,7 +2395,14 @@ function Home() {
                     hourlyStart={hourlyStart}
                     insight={insight}
                     onGenerateInsight={generateInsight}
-                    onNavigateToAirQuality={() => setActiveTab('Air Quality')}
+                    onNavigateToAirQuality={() => {
+                      setEnvMode('air');
+                      setActiveTab('Air Quality');
+                    }}
+                    onNavigateToWaterQuality={() => {
+                      setEnvMode('water');
+                      setActiveTab('Air Quality');
+                    }}
                     settings={settings}
                     onUpdateSettings={setSettings}
                     location={location}
@@ -2396,6 +2424,8 @@ function Home() {
                     settings={settings}
                     onUseCurrentLocation={useCurrentLocation}
                     onOpenGlobe={() => setIsGlobeModalOpen(true)}
+                    envMode={envMode}
+                    onChangeEnvMode={setEnvMode}
                   />
                 ) : activeTab === 'Saved' ? (
                   <SavedLocationsView
@@ -2623,6 +2653,7 @@ function TodayView({
   insight,
   onGenerateInsight,
   onNavigateToAirQuality,
+  onNavigateToWaterQuality,
   settings,
   onUpdateSettings,
   location,
@@ -2638,6 +2669,7 @@ function TodayView({
   insight: ReturnType<typeof useGenerateWeatherInsight>;
   onGenerateInsight: (overrideTone?: AppSettings['briefingTone']) => void;
   onNavigateToAirQuality: () => void;
+  onNavigateToWaterQuality: () => void;
   settings: AppSettings;
   onUpdateSettings?: React.Dispatch<React.SetStateAction<AppSettings>>;
   location: Location;
@@ -3248,17 +3280,32 @@ function TodayView({
               </div>
             )}
 
-            <button
-              type="button"
-              className="air-view-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                onNavigateToAirQuality();
-              }}
-            >
-              <span>Explore full air quality & pollutants</span>
-              <ArrowRight size={12} />
-            </button>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                className="air-view-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigateToAirQuality();
+                }}
+              >
+                <span>Explore full air quality & pollutants</span>
+                <ArrowRight size={12} />
+              </button>
+              <button
+                type="button"
+                className="air-view-btn"
+                data-testid="button-today-water-quality"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNavigateToWaterQuality();
+                }}
+              >
+                <Droplets size={12} />
+                <span>Check Water Quality</span>
+                <ArrowRight size={12} />
+              </button>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -3847,6 +3894,8 @@ function AirQualityView({
   settings,
   onUseCurrentLocation,
   onOpenGlobe,
+  envMode,
+  onChangeEnvMode,
 }: {
   air: AirQuality | null;
   location: Location;
@@ -3855,6 +3904,8 @@ function AirQualityView({
   settings: AppSettings;
   onUseCurrentLocation: () => void;
   onOpenGlobe?: () => void;
+  envMode: 'air' | 'water';
+  onChangeEnvMode: (mode: 'air' | 'water') => void;
 }) {
   const currentAir = air?.current;
   const usAqi = currentAir?.us_aqi ?? 0;
@@ -4037,9 +4088,15 @@ function AirQualityView({
       {/* Top Banner with Location and Controls */}
       <div className="section-heading flex items-center justify-between flex-wrap gap-3" style={{ marginBottom: 0 }}>
         <div>
-          <div className="eyebrow">Atmospheric Chemistry & Sensors</div>
+          <div className="eyebrow">
+            {envMode === 'water'
+              ? 'Watershed Hydrology & Chemical Sensors'
+              : 'Atmospheric Chemistry & Sensors'}
+          </div>
           <h2 className="section-title" style={{ fontSize: 24, marginTop: 4 }}>
-            Air Quality at {cleanCityOrVillageName(location.name)}
+            {envMode === 'water'
+              ? `Water Quality & Watersheds`
+              : `Air Quality at ${cleanCityOrVillageName(location.name)}`}
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'hsl(var(--muted-foreground))' }}>
@@ -4050,38 +4107,72 @@ function AirQualityView({
                 .filter(Boolean)
                 .join(', ')}
             </span>
-            <span
-              style={{
-                fontSize: 11,
-                fontFamily: 'var(--app-font-mono)',
-                background: 'hsl(var(--muted)/0.8)',
-                padding: '2px 8px',
-                borderRadius: 999,
-                border: '1px solid hsl(var(--border))',
-                color: 'hsl(var(--muted-foreground))',
-              }}
-            >
-              📍 GPS: {location.latitude.toFixed(3)}°, {location.longitude.toFixed(3)}°
+            <span className="text-xs font-mono tabular-nums text-muted-foreground">
+              · {location.latitude.toFixed(3)}°, {location.longitude.toFixed(3)}°
             </span>
           </div>
         </div>
 
-        {onOpenGlobe && (
-          <button
-            onClick={onOpenGlobe}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold text-xs transition shadow-md shadow-amber-400/25 border border-amber-300/40"
-            title="Open interactive 3D Globe with active location & passing clouds (Or long-press the Air Quality tab anytime)"
-            data-testid="button-open-3d-globe-from-aqi"
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div
+            className="inline-flex items-center gap-1 p-1 rounded-xl border border-border bg-muted/60"
+            role="tablist"
+            aria-label="Environmental telemetry mode"
           >
-            <Globe2 size={16} />
-            <span>Open 3D Earth Globe</span>
-            <span className="hidden sm:inline text-[10px] bg-slate-900/15 px-1.5 py-0.5 rounded font-mono font-normal">
-              Long press tab
-            </span>
-          </button>
-        )}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={envMode === 'air'}
+              data-testid="tab-env-air"
+              onClick={() => onChangeEnvMode('air')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                envMode === 'air'
+                  ? 'bg-background text-foreground shadow-sm border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Activity size={13} />
+              <span>Air Quality</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={envMode === 'water'}
+              data-testid="tab-env-water"
+              onClick={() => onChangeEnvMode('water')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                envMode === 'water'
+                  ? 'bg-background text-foreground shadow-sm border border-border/60'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Droplets size={13} />
+              <span>Water Quality</span>
+            </button>
+          </div>
+
+          {onOpenGlobe && (
+            <button
+              onClick={onOpenGlobe}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 font-semibold text-xs transition shadow-md shadow-amber-400/25 border border-amber-300/40 whitespace-nowrap shrink-0"
+              title="Open interactive 3D Globe with active location & passing clouds (Or long-press the Air Quality tab anytime)"
+              data-testid="button-open-3d-globe-from-aqi"
+            >
+              <Globe2 size={16} />
+              <span>Open 3D Earth Globe</span>
+            </button>
+          )}
+        </div>
       </div>
 
+      {envMode === 'water' ? (
+        <WaterQualityPanel
+          activeLocation={location}
+          tempUnit={settings.tempUnit}
+          windUnit={settings.windUnit}
+        />
+      ) : (
+        <>
       {/* Hero AQI Dial Card */}
       <section className="aqi-hero-card" data-testid="card-aqi-hero">
         <div className="aqi-hero-main-group">
@@ -4252,6 +4343,8 @@ function AirQualityView({
             })}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

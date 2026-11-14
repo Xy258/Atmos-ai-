@@ -20,10 +20,21 @@ createRoot(document.getElementById('root')!, {
 // Register Service Worker with Periodic Background Sync for PWA & offline freshness
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    if ('caches' in window) {
+      void caches.keys().then((keys) =>
+        Promise.all(
+          keys
+            .filter((k) => k === 'atmos-v1' || k === 'atmos-v2' || k === 'atmos-v3')
+            .map((k) => caches.delete(k)),
+        ),
+      );
+    }
+
     navigator.serviceWorker
-      .register('/sw.js')
+      .register('/sw.js', { updateViaCache: 'none' })
       .then((reg) => {
         console.log('[Atmos] ServiceWorker registered with scope:', reg.scope);
+        void reg.update().catch(() => {});
         // Register periodic background sync for automatic weather freshness
         void registerPeriodicWeatherSync();
       })

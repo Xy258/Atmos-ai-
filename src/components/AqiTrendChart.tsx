@@ -184,8 +184,10 @@ export function AqiTrendChart({
 
       for (let i = 0; i < pointsCount; i++) {
         const time = times[i];
-        const aqi = hourlyAqi[i] ?? currentAqi;
-        const pm25 = hourlyPm25[i] ?? 0;
+        const rawAqi = Number(hourlyAqi[i]);
+        const aqi = Number.isFinite(rawAqi) ? Math.round(rawAqi) : Math.round(Number(currentAqi) || 0);
+        const rawPm25 = Number(hourlyPm25[i]);
+        const pm25 = Number.isFinite(rawPm25) ? rawPm25 : 0;
         const details = getAqiDetails(aqi);
 
         if (aqi > peakVal) {
@@ -376,21 +378,9 @@ export function AqiTrendChart({
         <ResponsiveContainer width="100%" height="100%" style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}>
           <LineChart
             data={chartData}
-            margin={{ top: 12, right: 18, left: -14, bottom: 0 }}
+            margin={{ top: 12, right: 16, left: -14, bottom: 0 }}
             style={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
           >
-            <defs>
-              <linearGradient id="aqiLineGradient" x1="0" y1="0" x2="1" y2="0">
-                {chartData.map((d, i) => (
-                  <stop
-                    key={d.time}
-                    offset={`${(i / (chartData.length - 1)) * 100}%`}
-                    stopColor={d.details.color}
-                  />
-                ))}
-              </linearGradient>
-            </defs>
-
             <CartesianGrid
               strokeDasharray="3 3"
               vertical={false}
@@ -422,13 +412,6 @@ export function AqiTrendChart({
               stroke="#48bb78"
               strokeDasharray="4 4"
               strokeOpacity={0.65}
-              label={{
-                value: 'Good (50)',
-                fill: '#48bb78',
-                fontSize: 10,
-                position: 'right',
-                offset: 8,
-              }}
             />
 
             {/* Moderate AQI Threshold Line (100) */}
@@ -437,21 +420,18 @@ export function AqiTrendChart({
               stroke="#ecc94b"
               strokeDasharray="4 4"
               strokeOpacity={0.65}
-              label={{
-                value: 'Moderate (100)',
-                fill: '#ecc94b',
-                fontSize: 10,
-                position: 'right',
-                offset: 8,
-              }}
             />
 
             <Line
               type="monotone"
               dataKey="aqi"
               name="AQI"
-              stroke="url(#aqiLineGradient)"
+              stroke={peakPoint.details.color || '#38bdf8'}
               strokeWidth={3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              connectNulls
+              isAnimationActive={false}
               dot={<CustomDot />}
               activeDot={{
                 r: 6,
@@ -459,7 +439,6 @@ export function AqiTrendChart({
                 strokeWidth: 2,
                 fill: '#ffffff',
               }}
-              animationDuration={900}
             />
           </LineChart>
         </ResponsiveContainer>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atmos-v3';
+const CACHE_NAME = 'atmos-v4';
 const WEATHER_CACHE = 'atmos-weather-cache';
 const CONFIG_CACHE = 'atmos-sync-config';
 
@@ -225,8 +225,26 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Ignore non-GET requests or chrome-extension URLs
+  // Ignore non-GET requests or non-HTTP(S) schemes
   if (request.method !== 'GET' || !url.protocol.startsWith('http')) {
+    return;
+  }
+
+  // NEVER intercept or cache Vite dev server modules, pre-bundled deps (?v=), HMR, or backend API routes.
+  // Caching /node_modules/.vite/deps/* across dev restarts causes duplicate React instances ("Invalid hook call").
+  if (
+    url.origin === self.location.origin &&
+    (url.pathname.startsWith('/node_modules/') ||
+      url.pathname.startsWith('/@vite') ||
+      url.pathname.startsWith('/@react-refresh') ||
+      url.pathname.startsWith('/@fs/') ||
+      url.pathname.startsWith('/@id/') ||
+      url.pathname.startsWith('/src/') ||
+      url.pathname.startsWith('/api/') ||
+      url.searchParams.has('v') ||
+      url.searchParams.has('t') ||
+      url.searchParams.has('import'))
+  ) {
     return;
   }
 
@@ -266,7 +284,33 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell & static assets: Stale-While-Revalidate with Cache fallback
+  // Only cache same-origin requests
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // HTML navigations: Network-First with Cache fallback so updated builds load cleanly
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
+          return cached || caches.match('/index.html');
+        })
+    );
+    return;
+  }
+
+  // Production static assets (/assets/*, icons, manifest): Stale-While-Revalidate
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request)
